@@ -48,8 +48,6 @@ header.app-head{
   color:var(--marsh);
   padding:10px 16px 8px;
   position:sticky; top:0; z-index:50;
-  box-shadow:0 2px 10px rgba(0,0,0,.10);
-  border-bottom:1px solid var(--line);
 }
 .app-head-layout{
   display:grid;
@@ -118,8 +116,9 @@ header.app-head .sub{font-size:.72rem;color:var(--ink-soft);white-space:nowrap;}
 .btn-danger{background:var(--rust); color:#fff;}
 .btn:active{transform:scale(.97);}
 nav.tabs{
-  display:flex; overflow-x:auto; gap:6px; padding:8px 10px;
+  display:flex; overflow-x:auto; gap:6px; padding:8px 10px 12px;
   background:var(--paper); position:sticky; top:78px; z-index:49;
+  box-shadow:0 2px 10px rgba(0,0,0,.10);
   border-bottom:1px solid var(--line);
 }
 nav.tabs button{
@@ -129,6 +128,7 @@ nav.tabs button{
 }
 nav.tabs button.active{
   background:var(--marsh-light); color:#fff; border-color:var(--marsh-light);
+  box-shadow:0 3px 8px rgba(46,74,54,.35);
 }
 main{padding:14px 12px; max-width:760px; margin:0 auto;}
 .section{display:none;}
@@ -308,12 +308,31 @@ footer.bar .btn{flex:1; justify-content:center;}
 .section-nav{
   display:flex;
   gap:10px;
-  justify-content:space-between;
+  justify-content:flex-end;
   margin-top:18px;
   padding-top:14px;
   border-top:1px solid var(--line);
 }
 .section-nav .btn{min-width:130px;}
+
+/* ===================== Décor d'arrière-plan (carnet de terrain) ===================== */
+.bg-art{
+  position:fixed;
+  pointer-events:none;
+  z-index:0;
+  opacity:.6;
+}
+.bg-art svg{display:block; width:100%; height:100%;}
+.bg-art-left{
+  left:0; bottom:0;
+  width:170px; height:230px;
+}
+.bg-art-right{
+  right:0; top:0;
+  width:340px; height:100%;
+}
+@media (max-width:1200px){ .bg-art-right{display:none;} }
+@media (max-width:900px){ .bg-art-left{display:none;} }
 
 @media (max-width:700px){
   header.app-head{padding:8px 10px 7px;}
@@ -332,12 +351,80 @@ footer.bar .btn{flex:1; justify-content:center;}
 </head>
 <body>
 
+<div class="bg-art bg-art-left" aria-hidden="true">
+  <svg viewBox="0 0 200 280" xmlns="http://www.w3.org/2000/svg">
+    <g fill="var(--marsh-light)" fill-opacity=".38" stroke="var(--marsh)" stroke-opacity=".55" stroke-width="1.2">
+      <path d="M100,278 Q84,214 55,150 Q116,214 100,278 Z"/>
+      <path d="M100,278 Q87,186 72,95 Q113,186 100,278 Z"/>
+      <path d="M100,278 Q90,166 95,55 Q110,166 100,278 Z"/>
+      <path d="M104,278 Q94,169 120,60 Q114,169 104,278 Z"/>
+      <path d="M108,278 Q95,189 142,100 Q121,189 108,278 Z"/>
+      <path d="M112,278 Q96,216 158,155 Q128,216 112,278 Z"/>
+    </g>
+    <g fill="var(--amber)" fill-opacity=".78" stroke="var(--marsh)" stroke-opacity=".3" stroke-width=".6">
+      <ellipse cx="88" cy="50" rx="10" ry="5" transform="rotate(-35 88 50)"/>
+      <ellipse cx="101" cy="50" rx="10" ry="5" transform="rotate(28 101 50)"/>
+      <ellipse cx="95" cy="38" rx="6" ry="9"/>
+      <ellipse cx="114" cy="55" rx="8" ry="4" transform="rotate(-30 114 55)"/>
+      <ellipse cx="124" cy="55" rx="8" ry="4" transform="rotate(25 124 55)"/>
+      <ellipse cx="119" cy="45" rx="5" ry="7"/>
+    </g>
+  </svg>
+</div>
+
+<div class="bg-art bg-art-right" aria-hidden="true">
+  <svg viewBox="0 0 380 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    <!-- Aulne glutineux -->
+    <g stroke="#5b4530" stroke-opacity=".4" stroke-width="3" fill="none">
+      <path d="M332,320 C310,270 260,230 210,210"/>
+      <path d="M336,300 C355,258 378,232 378,198"/>
+      <path d="M334,340 C320,300 300,260 275,235"/>
+    </g>
+    <path d="M320,900 C316,650 324,420 332,280 L344,280 C338,420 332,650 336,900 Z" fill="#5b4530" fill-opacity=".5"/>
+    <g fill-opacity=".28" stroke="var(--marsh)" stroke-opacity=".25" stroke-width="1">
+      <ellipse cx="210" cy="210" rx="70" ry="55" fill="var(--marsh-light)"/>
+      <ellipse cx="290" cy="170" rx="85" ry="65" fill="var(--marsh-light)"/>
+      <ellipse cx="340" cy="230" rx="70" ry="60" fill="var(--marsh)"/>
+      <ellipse cx="250" cy="120" rx="65" ry="50" fill="var(--marsh)"/>
+      <ellipse cx="190" cy="250" rx="55" ry="45" fill="var(--marsh-light)"/>
+      <ellipse cx="310" cy="100" rx="55" ry="45" fill="var(--marsh-light)"/>
+      <ellipse cx="260" cy="190" rx="40" ry="30" fill="var(--marsh)"/>
+    </g>
+    <!-- Massette (Typha) -->
+    <g fill="var(--marsh)" fill-opacity=".32" stroke="var(--marsh)" stroke-opacity=".5" stroke-width="1">
+      <path d="M90,860 Q65,755 40,650 Q75,755 90,860 Z"/>
+      <path d="M90,860 Q75,710 60,560 Q95,710 90,860 Z"/>
+      <path d="M90,860 Q88,690 85,520 Q100,690 90,860 Z"/>
+      <path d="M90,860 Q98,700 105,545 Q115,700 90,860 Z"/>
+      <path d="M90,860 Q112,730 130,600 Q120,730 90,860 Z"/>
+      <path d="M90,860 Q130,760 150,660 Q125,760 90,860 Z"/>
+    </g>
+    <g fill="#6b4a23" fill-opacity=".6" stroke="#4a3218" stroke-opacity=".4" stroke-width=".6">
+      <path d="M80,560 a5,5 0 0 1 10,0 v55 a5,5 0 0 1 -10,0 Z"/>
+      <path d="M103,588 a4,4 0 0 1 8,0 v42 a4,4 0 0 1 -8,0 Z"/>
+    </g>
+    <g stroke="#6b4a23" stroke-opacity=".5" stroke-width="1" fill="none">
+      <path d="M85,560 L83,535"/>
+      <path d="M107,588 L106,568"/>
+    </g>
+    <!-- Eau -->
+    <rect x="0" y="650" width="380" height="250" fill="var(--water-light)" fill-opacity=".16"/>
+    <g stroke="var(--water)" stroke-opacity=".3" stroke-width="1.5" fill="none">
+      <path d="M0,668 Q95,656 190,668 T380,668"/>
+      <path d="M0,710 Q95,698 190,710 T380,710"/>
+      <path d="M0,752 Q95,740 190,752 T380,752"/>
+      <path d="M0,798 Q95,786 190,798 T380,798"/>
+      <path d="M0,845 Q95,833 190,845 T380,845"/>
+    </g>
+  </svg>
+</div>
+
 <header class="app-head">
   <div class="app-head-layout">
     <div class="app-brand">
       <img class="app-brand-logo" src="palustris-logo.png" alt="Palustris">
       <div class="app-brand-text">
-        <h1>Fiche Zone Humide — Terrain</h1>
+        <h1>Inventaire zones humides — Terrain</h1>
         <div class="sub">Saisie hors connexion · export GeoJSON / CSV</div>
         <div class="status-row">
           <div class="gps-chip" id="gpsChip"><span class="dot"></span><span id="gpsText">GPS non localisé</span></div>
@@ -1268,12 +1355,12 @@ function buildFonctions(card){
   card.appendChild(alimentationTable(ALIMENTATION_ITEMS));
 
   card.appendChild(el('h2',{},'Fonctions majeures'));
-  card.appendChild(el('div',{class:'hint'},'Cocher les fonctions concernées ; graduation -, +/-, +.'));
-  card.appendChild(ratingListSelectable('fonction', ['Biologique','Hydraulique','Épuratrice'], RATING3));
+  card.appendChild(el('div',{class:'hint'},'Graduation -, +/-, +.'));
+  card.appendChild(ratingList('fonction', ['Biologique','Hydraulique','Épuratrice'], RATING3));
 
   card.appendChild(el('h2',{},'Valeurs majeures'));
-  card.appendChild(el('div',{class:'hint'},'Cocher les valeurs concernées ; graduation -, +/-, +.'));
-  card.appendChild(ratingListSelectable('valmaj', ['Économique','Culturelle / paysagère','Sociale, récréative'], RATING3));
+  card.appendChild(el('div',{class:'hint'},'Graduation -, +/-, +.'));
+  card.appendChild(ratingList('valmaj', ['Économique','Culturelle / paysagère','Sociale, récréative'], RATING3));
 
   card.appendChild(el('h2',{},'Bilan fonctionnel'));
   card.appendChild(el('h3',{},'Fonction hydraulique'));
