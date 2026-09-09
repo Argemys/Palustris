@@ -1796,15 +1796,19 @@ function renderCorineBlock(container){
     matches.forEach(({r})=>{
       const item = el('div',{class:'chk', style:'cursor:pointer; padding:8px 10px; border-bottom:1px solid var(--line);'}, r.code+' — '+r.libelle);
       item.addEventListener('click', ()=>{
-        codeInput.value = r.code;
-        libelleInput.value = r.libelle;
-        searchInput.value='';
-        results.innerHTML='';
+        const current = getVal('corine_habitats')||[];
+        if(current.some(h=>h.code===r.code)){ toast('Habitat déjà ajouté'); return; }
+        current.push({code:r.code, libelle:r.libelle});
+        setVal('corine_habitats', current);
+        searchInput.value=''; results.innerHTML='';
+        renderCorineBlock(container);
       });
       list.appendChild(item);
     });
     results.appendChild(list);
   });
+
+  container.appendChild(el('div',{class:'hint', style:'margin-top:8px;'},'Habitat introuvable dans le référentiel ? Saisis le code/libellé manuellement ci-dessous.'));
 
   const addBtn = el('button',{class:'btn btn-primary', type:'button', style:'margin-top:6px;'}, '+ Ajouter cet habitat');
   addBtn.addEventListener('click', ()=>{
