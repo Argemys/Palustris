@@ -421,6 +421,20 @@ function el(tag, attrs={}, ...kids){
   return e;
 }
 
+// Écriture localStorage qui ne plante jamais silencieusement : si le stockage du navigateur
+// est plein (catalogues + photos + fiches peuvent occuper plusieurs Mo), l'app le signale
+// clairement au lieu de s'arrêter sans rien dire au milieu d'un enregistrement.
+function safeLocalSet(key, value){
+  try{
+    localStorage.setItem(key, value);
+    return true;
+  }catch(e){
+    console.error('Échec écriture localStorage ('+key+') :', e);
+    toast('⚠️ Stockage plein sur cet appareil — impossible d\'enregistrer. Libère de la place (supprime d\'anciennes fiches/photos) puis réessaie.');
+    return false;
+  }
+}
+
 /* ===================== Firebase — synchronisation en ligne entre appareils =====================
    ⚠️ À FAIRE AVANT DE DÉPLOYER : remplace les valeurs ci-dessous par celles de TON projet Firebase
    (gratuit) — Console Firebase → Paramètres du projet → Tes applications → Config SDK.
@@ -573,7 +587,7 @@ let currentSectionId = null;
 function setVal(key, val){ record[key] = val; saveDraft(); }
 function getVal(key){ return record[key]; }
 
-function saveDraft(){ localStorage.setItem('zh_draft', JSON.stringify(record)); }
+function saveDraft(){ try{ localStorage.setItem('zh_draft', JSON.stringify(record)); }catch(e){ console.warn('Brouillon non sauvegardé (stockage plein) :', e); } }
 
 function migrateLegacyPhoto(){
   if(record.photo_data && !record.photos){
@@ -596,7 +610,11 @@ function loadDraft(){
 function getLocalRecords(){
   try{ return JSON.parse(localStorage.getItem('zh_records_local')||'[]'); }catch(e){ return []; }
 }
-function setLocalRecords(list){ localStorage.setItem('zh_records_local', JSON.stringify(list)); updateRecCount(); }
+function setLocalRecords(list){
+  const ok = safeLocalSet('zh_records_local', JSON.stringify(list));
+  if(ok) updateRecCount();
+  return ok;
+}
 
 function getRecords(){
   return localOnlyMode ? getLocalRecords() : recordsCache;
@@ -612,7 +630,7 @@ function updateRecCount(){ document.getElementById('recCount').textContent = get
 function getPendingPhotoQueue(){
   try{ return JSON.parse(localStorage.getItem('zh_pending_photos')||'[]'); }catch(e){ return []; }
 }
-function setPendingPhotoQueue(list){ localStorage.setItem('zh_pending_photos', JSON.stringify(list)); }
+function setPendingPhotoQueue(list){ safeLocalSet('zh_pending_photos', JSON.stringify(list)); }
 
 async function uploadOnePhoto(ficheId, category, photo){
   const path = `users/${currentUser.uid}/photos/${ficheId}/${category}_${photo.id||Date.now()}.jpg`;
@@ -732,7 +750,7 @@ function l93ToWgs84(x, y){
 function getCorineReferentiel(){
   try{ return JSON.parse(localStorage.getItem('zh_corine_ref')||'[]'); }catch(e){ return []; }
 }
-function setCorineReferentiel(list){ localStorage.setItem('zh_corine_ref', JSON.stringify(list)); }
+function setCorineReferentiel(list){ safeLocalSet('zh_corine_ref', JSON.stringify(list)); }
 
 /* ===================== Catalogues flore — multi-référentiels ===================== */
 // Chaque catalogue définit : son stockage local, son fichier à charger, les champs utilisés
@@ -781,11 +799,11 @@ const CATALOGUES = {
   }
 };
 function getCatalogueSelected(){ return localStorage.getItem('zh_catalogue_selected') || 'alslor'; }
-function setCatalogueSelected(id){ localStorage.setItem('zh_catalogue_selected', id); }
+function setCatalogueSelected(id){ safeLocalSet('zh_catalogue_selected', id); }
 function getFloreReferentiel(catId){
   try{ return JSON.parse(localStorage.getItem(CATALOGUES[catId].storageKey)||'[]'); }catch(e){ return []; }
 }
-function setFloreReferentiel(catId, list){ localStorage.setItem(CATALOGUES[catId].storageKey, JSON.stringify(list)); }
+function setFloreReferentiel(catId, list){ safeLocalSet(CATALOGUES[catId].storageKey, JSON.stringify(list)); }
 
 // Chargement automatique des référentiels depuis les fichiers du dépôt (déposés à côté d'index.html).
 // L'import manuel (boutons "Importer…") reste disponible en secours si ce chargement échoue
@@ -1761,7 +1779,8 @@ function saveRecord(){
     const list = getLocalRecords();
     const idx = list.findIndex(r=>r._id===ficheId);
     if(idx>-1) list[idx] = rec; else list.push(rec);
-    setLocalRecords(list);
+    const ok = setLocalRecords(list);
+    if(!ok) return; // échec d'écriture déjà signalé par safeLocalSet — ne surtout pas effacer la fiche en cours
   } else {
     if(!firebaseConfigured){ toast('Firebase non configuré — voir firebaseConfig en haut du script'); return; }
     if(!currentUser){ toast('Non connecté'); return; }
