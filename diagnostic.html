@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostic stockage — FloraGIS ZH</title>
+<style>
+body{font-family:-apple-system,sans-serif; padding:16px; background:#111; color:#eee; font-size:14px;}
+h1{font-size:1.1rem;}
+h2{font-size:.95rem; margin-top:24px; color:#8fd; border-bottom:1px solid #444; padding-bottom:4px;}
+pre{background:#000; padding:10px; border-radius:6px; overflow-x:auto; white-space:pre-wrap; word-break:break-all; font-size:12px; border:1px solid #333;}
+.ok{color:#8f8;} .warn{color:#fc6;} .err{color:#f66;}
+button{padding:10px 16px; margin:4px 4px 4px 0; border-radius:8px; border:1px solid #555; background:#222; color:#eee; font-size:14px;}
+</style>
+</head>
+<body>
+<h1>🔍 Diagnostic stockage — FloraGIS ZH</h1>
+<div id="out">Analyse en cours…</div>
+
+<h2>Actions</h2>
+<button id="btnDownload">⬇️ Télécharger tout en JSON (sauvegarde de secours)</button>
+
+<script>
+const out = document.getElementById('out');
+let html = '';
+
+function esc(s){ return String(s).replace(/</g,'&lt;'); }
+
+// 1. localStorage
+html += '<h2>localStorage</h2>';
+const lsKeys = Object.keys(localStorage);
+html += `<p>${lsKeys.length} clé(s) trouvée(s) : ${esc(lsKeys.join(', ')||'(aucune)')}</p>`;
+
+const recordsRaw = localStorage.getItem('zh_records_local');
+if(recordsRaw == null){
+  html += `<p class="err">❌ zh_records_local : ABSENTE du localStorage (donnée effacée à ce niveau).</p>`;
+} else {
+  try{
+    const parsed = JSON.parse(recordsRaw);
+    html += `<p class="ok">✅ zh_records_local présente et lisible : ${parsed.length} fiche(s).</p>`;
+    html += '<pre>'+esc(JSON.stringify(parsed, null, 2)).slice(0,4000)+'</pre>';
+  }catch(e){
+    html += `<p class="warn">⚠️ zh_records_local présente MAIS illisible (JSON corrompu) — la donnée brute existe peut-être encore récupérable :</p>`;
+    html += '<pre>'+esc(recordsRaw).slice(0,4000)+'</pre>';
+  }
+}
+
+const draftRaw = localStorage.getItem('zh_draft');
+html += draftRaw ? `<p class="ok">Brouillon en cours (zh_draft) présent.</p>` : `<p>Pas de brouillon en cours.</p>`;
+
+out.innerHTML = html;
+
+// 2. IndexedDB (catalogues + photos)
+async function checkIDB(){
+  let idbHtml = '<h2>IndexedDB</h2>';
+  try{
+    const dbs = indexedDB.databases ? await indexedDB.databases() : null;
+    idbHtml += dbs ? `<p>Bases trouvées : ${esc(dbs.map(d=>d.name+' (v'+d.version+')').join(', ')||'(aucune)')}</p>`
+                   : '<p class="warn">indexedDB.databases() non supporté sur ce navigateur — impossible de lister automatiquement.</p>';
+  }catch(e){
+    idbHtml += '<p class="err">Erreur lecture IndexedDB : '+esc(e.message)+'</p>';
+  }
+  out.innerHTML += idbHtml;
+}
+checkIDB();
+
+document.getElementById('btnDownload').addEventListener('click', ()=>{
+  const dump = {};
+  for(const k of Object.keys(localStorage)) dump[k] = localStorage.getItem(k);
+  const blob = new Blob([JSON.stringify(dump, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'diagnostic_localstorage_'+Date.now()+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+});
+</script>
+</body>
+</html>
