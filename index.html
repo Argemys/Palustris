@@ -18,6 +18,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --bg: #EEF0E4;
@@ -391,6 +392,7 @@ footer.bar .btn{flex:1; justify-content:center;}
     <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
       <button class="btn btn-primary" id="btnExportGeojson" type="button">⬇️ Export GeoJSON</button>
       <button class="btn btn-water" id="btnExportCsv" type="button">⬇️ Export CSV</button>
+      <button class="btn btn-outline" id="btnExportPhotos" type="button">📷 Export photos (ZIP)</button>
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
   </div>
@@ -633,9 +635,12 @@ function getPendingPhotoQueue(){
 function setPendingPhotoQueue(list){ safeLocalSet('zh_pending_photos', JSON.stringify(list)); }
 
 async function uploadOnePhoto(ficheId, category, photo){
+  const blob = photo.id ? await getPhotoBlob(photo.id) : null;
+  if(!blob && !photo.data) throw new Error('Photo introuvable (ni IndexedDB ni ancien format)');
   const path = `users/${currentUser.uid}/photos/${ficheId}/${category}_${photo.id||Date.now()}.jpg`;
   const ref = storage.ref().child(path);
-  await ref.putString(photo.data, 'data_url');
+  if(blob) await ref.put(blob);
+  else await ref.putString(photo.data, 'data_url'); // secours ancien format
   const url = await ref.getDownloadURL();
   return {url, path, name: photo.name, taken_at: photo.taken_at, category};
 }
@@ -1249,17 +1254,99 @@ function refreshPlancheReferenceOptions(){
 
 
 /* ===================== Photos ===================== */
-const PHOTO_CATEGORIES = [
-  {key:'vue_generale', label:'Vue générale', icon:'📍'},
-  {key:'sondage_pedologique', label:'Sondage pédologique', icon:'🕳️'},
-  {key:'vegetation', label:'Végétation', icon:'🌿'},
-  {key:'autre_detail', label:'Autre détail', icon:'🔎'}
-];
+/* ===================== Photos : stockage des images dans IndexedDB =====================
+   Comme pour les catalogues, les images elles-mêmes (lourdes) ne vont plus dans localStorage —
+   seule une petite référence {id, name, taken_at} reste dans la fiche. L'image réelle (Blob)
+   vit dans IndexedDB, base de données séparée dédiée aux photos. */
+const PHOTO_DB_NAME = 'zh_photos_db';
+const PHOTO_STORE = 'photos';
+function openPhotoDB(){
+  return new Promise((resolve, reject)=>{
+    if(!window.indexedDB){ reject(new Error('IndexedDB indisponible')); return; }
+    const req = indexedDB.open(PHOTO_DB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(PHOTO_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function savePhotoBlob(id, blob){
+  const dbi = await openPhotoDB();
+  return new Promise((resolve,reject)=>{
+    const tx = dbi.transaction(PHOTO_STORE,'readwrite');
+    tx.objectStore(PHOTO_STORE).put(blob, id);
+    tx.oncomplete = resolve;
+    tx.onerror = ()=> reject(tx.error);
+  });
+}
+async function getPhotoBlob(id){
+  try{
+    const dbi = await openPhotoDB();
+    return await new Promise((resolve,reject)=>{
+      const tx = dbi.transaction(PHOTO_STORE,'readonly');
+      const req = tx.objectStore(PHOTO_STORE).get(id);
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }catch(e){ console.warn('Lecture photo IndexedDB échouée', id, e); return undefined; }
+}
+async function deletePhotoBlob(id){
+  try{
+    const dbi = await openPhotoDB();
+    await new Promise((resolve,reject)=>{
+      const tx = dbi.transaction(PHOTO_STORE,'readwrite');
+      tx.objectStore(PHOTO_STORE).delete(id);
+      tx.oncomplete = resolve;
+      tx.onerror = ()=> reject(tx.error);
+    });
+  }catch(e){ console.warn('Suppression photo IndexedDB échouée', id, e); }
+}
+function newPhotoId(){ return 'ph_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+// Migration ponctuelle : d'anciennes fiches (brouillon ou déjà enregistrées en local) peuvent
+// encore contenir des photos en base64 direct (ancien format). On les bascule vers IndexedDB
+// sans rien perdre, une seule fois.
+async function migratePhotosObjectToIDB(photosObj){
+  let changed = false;
+  if(!photosObj || typeof photosObj !== 'object') return false;
+  for(const cat of Object.keys(photosObj)){
+    const arr = photosObj[cat];
+    if(!Array.isArray(arr)) continue;
+    for(let i=0;i<arr.length;i++){
+      const p = arr[i];
+      if(p && p.data && !p.id){
+        try{
+          const blob = await (await fetch(p.data)).blob();
+          const id = newPhotoId();
+          await savePhotoBlob(id, blob);
+          arr[i] = {id, name:p.name||'', taken_at:p.taken_at||new Date().toISOString()};
+          changed = true;
+        }catch(e){ console.warn('Migration d\'une photo échouée :', e); }
+      }
+    }
+  }
+  return changed;
+}
+async function migrateAllPhotosToIDB(){
+  if(await migratePhotosObjectToIDB(record.photos)) saveDraft();
+  if(localOnlyMode || true){ // les fiches locales existent indépendamment du mode actif
+    const list = getLocalRecords();
+    let anyChanged = false;
+    for(const r of list){
+      if(await migratePhotosObjectToIDB(r.photos)) anyChanged = true;
+    }
+    if(anyChanged) setLocalRecords(list);
+  }
+}
 
 function getPhotos(){
   const photos = getVal('photos');
   return (photos && typeof photos === 'object' && !Array.isArray(photos)) ? photos : {};
 }
+
+const PHOTO_CATEGORIES = [
+  {key:'sondage_pedologique', label:'Pédologie', icon:'🕳️'},
+  {key:'vegetation', label:'Végétation', icon:'🌿'}
+];
 
 function setPhotos(photos){
   setVal('photos', photos);
@@ -1286,7 +1373,9 @@ async function compressPhotoFile(file, maxSize=1600, quality=.78){
   canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
   canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
   canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-  return canvas.toDataURL('image/jpeg', quality);
+  return new Promise((resolve,reject)=>{
+    canvas.toBlob(blob=> blob ? resolve(blob) : reject(new Error('Compression échouée')), 'image/jpeg', quality);
+  });
 }
 
 function createPhotoCategory(category){
@@ -1297,32 +1386,55 @@ function createPhotoCategory(category){
   const grid = el('div',{class:'photo-grid'});
   const count = el('div',{class:'photo-count'});
   const actions = el('div',{class:'photo-actions'});
+  let objectUrls = [];
 
-  function render(){
+  async function render(){
+    objectUrls.forEach(u=>URL.revokeObjectURL(u));
+    objectUrls = [];
     grid.innerHTML='';
     const photos = getPhotos();
     const list = Array.isArray(photos[category.key]) ? photos[category.key] : [];
 
-    list.forEach((photo, idx)=>{
+    count.textContent = list.length + (list.length > 1 ? ' photos' : ' photo');
+    if(list.length===0) count.textContent='Aucune photo';
+
+    for(let idx=0; idx<list.length; idx++){
+      const photo = list[idx];
       const item = el('div',{class:'photo-item'});
       const img = el('img',{alt:category.label+' — photo '+(idx+1)});
-      img.src = photo.data;
+      const blob = photo.id ? await getPhotoBlob(photo.id) : null;
+      if(blob){
+        const url = URL.createObjectURL(blob);
+        objectUrls.push(url);
+        img.src = url;
+      } else if(photo.data){
+        img.src = photo.data; // secours : ancien format pas encore migré
+      }
       const del = el('button',{class:'photo-delete',type:'button',title:'Supprimer cette photo'},'×');
-      del.addEventListener('click',()=>{
+      del.addEventListener('click',async ()=>{
         const current = getPhotos();
         const arr = Array.isArray(current[category.key]) ? current[category.key].slice() : [];
-        arr.splice(idx,1);
+        const [removed] = arr.splice(idx,1);
         current[category.key]=arr;
         setPhotos(current);
+        if(removed && removed.id) deletePhotoBlob(removed.id);
         render();
       });
       item.appendChild(img);
       item.appendChild(del);
       grid.appendChild(item);
-    });
+    }
+  }
 
-    count.textContent = list.length + (list.length > 1 ? ' photos' : ' photo');
-    if(list.length===0) count.textContent='Aucune photo';
+  async function addPhoto(file){
+    const blob = await compressPhotoFile(file);
+    const id = newPhotoId();
+    await savePhotoBlob(id, blob);
+    const current = getPhotos();
+    const arr = Array.isArray(current[category.key]) ? current[category.key].slice() : [];
+    arr.push({id, name:file.name||'', taken_at:new Date().toISOString()});
+    current[category.key]=arr;
+    setPhotos(current);
   }
 
   // Caméra : une photo à la fois, pour favoriser l'ouverture directe de la caméra
@@ -1337,16 +1449,8 @@ function createPhotoCategory(category){
   cameraInput.addEventListener('change',async()=>{
     const files=Array.from(cameraInput.files||[]);
     for(const file of files){
-      try{
-        const data=await compressPhotoFile(file);
-        const current=getPhotos();
-        const arr=Array.isArray(current[category.key]) ? current[category.key].slice() : [];
-        arr.push({data, name:file.name||'', taken_at:new Date().toISOString()});
-        current[category.key]=arr;
-        setPhotos(current);
-      }catch(e){
-        toast('Impossible d’ajouter cette image');
-      }
+      try{ await addPhoto(file); }
+      catch(e){ toast('Impossible d’ajouter cette image'); }
     }
     cameraInput.value='';
     render();
@@ -1365,16 +1469,8 @@ function createPhotoCategory(category){
     const files=Array.from(galleryInput.files||[]);
     if(!files.length) return;
     for(const file of files){
-      try{
-        const data=await compressPhotoFile(file);
-        const current=getPhotos();
-        const arr=Array.isArray(current[category.key]) ? current[category.key].slice() : [];
-        arr.push({data, name:file.name||'', taken_at:new Date().toISOString()});
-        current[category.key]=arr;
-        setPhotos(current);
-      }catch(e){
-        toast('Impossible d’ajouter une image');
-      }
+      try{ await addPhoto(file); }
+      catch(e){ toast('Impossible d’ajouter une image'); }
     }
     galleryInput.value='';
     render();
@@ -1846,11 +1942,16 @@ function saveRecord(){
     if(!firebaseConfigured){ toast('Firebase non configuré — voir firebaseConfig en haut du script'); return; }
     if(!currentUser){ toast('Non connecté'); return; }
     const photosByCategory = rec.photos;
+    // Les photos ne doivent PAS aller dans le document Firestore de la fiche (limite de 1 Mo par
+    // document, et ce serait redondant) : elles partent vers Firebase Storage via syncFichePhotos,
+    // qui met à jour photos_urls sur le document une fois chaque upload terminé.
+    const recForFirestore = Object.assign({}, rec);
+    delete recForFirestore.photos;
     // Pas d'attente bloquante sur l'écriture réseau : la persistance hors connexion de Firestore
     // applique le changement localement tout de suite (donc utilisable sans réseau), et synchronise
     // automatiquement en tâche de fond dès que la connexion revient.
     setSyncStatus(navigator.onLine ? 'syncing' : 'offline');
-    db.collection('users').doc(currentUser.uid).collection('fiches').doc(ficheId).set(rec)
+    db.collection('users').doc(currentUser.uid).collection('fiches').doc(ficheId).set(recForFirestore)
       .then(()=> setSyncStatus('synced'))
       .catch(e=>{ console.error('Erreur sauvegarde Firestore :', e); setSyncStatus('error'); });
     syncFichePhotos(ficheId, photosByCategory);
@@ -1919,6 +2020,88 @@ function download(filename, content, mime){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
+// Calcule la liste des fichiers photo d'une fiche (locaux dans IndexedDB, ou déjà sur Firebase
+// Storage) avec un nom de fichier stable — utilisé à la fois pour la colonne "photos_fichiers"
+// des exports CSV/GeoJSON (juste les noms, lisibles) et pour construire le ZIP réel des images.
+function photoFileList(r){
+  const files = [];
+  const base = (r.identifiant || r._id || 'fiche').replace(/[^a-zA-Z0-9_-]+/g,'_');
+  if(r.photos && typeof r.photos === 'object' && !Array.isArray(r.photos)){
+    Object.entries(r.photos).forEach(([category, arr])=>{
+      (arr||[]).forEach((photo, idx)=>{
+        if(photo.id){
+          files.push({filename: `${base}_${category}_${idx+1}.jpg`, source:'idb', id: photo.id});
+        } else if(photo.data){
+          files.push({filename: `${base}_${category}_${idx+1}.jpg`, source:'legacy_data', data: photo.data});
+        }
+      });
+    });
+  }
+  if(Array.isArray(r.photos_urls)){
+    r.photos_urls.forEach((photo, idx)=>{
+      const cat = photo.category || 'photo';
+      files.push({filename: `${base}_${cat}_${idx+1}.jpg`, source:'remote', url: photo.url});
+    });
+  }
+  return files;
+}
+
+// Retire les champs photo bruts (références IndexedDB / liste d'URLs) des propriétés exportées
+// en CSV/GeoJSON — une image n'a pas sa place dans une cellule de tableur — et les remplace par
+// la liste des noms de fichiers correspondants dans l'export ZIP (voir exportPhotosZip).
+function sanitizeRecordForTabularExport(r){
+  const files = photoFileList(r);
+  const clean = Object.assign({}, r);
+  delete clean.photos;
+  delete clean.photos_urls;
+  clean.photos_fichiers = files.map(f=>f.filename).join(' | ');
+  return clean;
+}
+
+function downloadBlob(filename, blob){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+async function exportPhotosZip(){
+  const list = getRecords();
+  const allFiles = list.flatMap(photoFileList);
+  if(allFiles.length===0){ toast('Aucune photo à exporter'); return; }
+  if(typeof JSZip === 'undefined'){ toast('Bibliothèque ZIP indisponible (pas de réseau au premier chargement ?)'); return; }
+
+  toast('Préparation du ZIP…');
+  const zip = new JSZip();
+  let failed = 0;
+  for(const f of allFiles){
+    try{
+      if(f.source==='idb'){
+        const blob = await getPhotoBlob(f.id);
+        if(blob) zip.file(f.filename, blob);
+        else failed++;
+      } else if(f.source==='legacy_data'){
+        const base64 = (f.data||'').split(',')[1];
+        if(base64) zip.file(f.filename, base64, {base64:true});
+        else failed++;
+      } else {
+        const res = await fetch(f.url);
+        if(!res.ok) throw new Error('http '+res.status);
+        const blob = await res.blob();
+        zip.file(f.filename, blob);
+      }
+    }catch(e){
+      console.error('Photo non incluse dans le ZIP :', f.filename, e);
+      failed++;
+    }
+  }
+  const blob = await zip.generateAsync({type:'blob'});
+  downloadBlob('photos_zones_humides_'+Date.now()+'.zip', blob);
+  toast(failed
+    ? `ZIP téléchargé — ${failed} photo(s) indisponible(s) (hors connexion ?)`
+    : 'ZIP des photos téléchargé ('+allFiles.length+' photo(s))');
+}
+
 function exportGeojson(){
   const list = getRecords();
   const features = list.map(r=>{
@@ -1927,10 +2110,11 @@ function exportGeojson(){
       const wgs = l93ToWgs84(parseFloat(r.x_l93), parseFloat(r.y_l93));
       geom = {type:'Point', coordinates:[wgs.lon, wgs.lat]};
     }
+    const clean = sanitizeRecordForTabularExport(r);
     return {
       type:'Feature',
       geometry: geom,
-      properties: Object.fromEntries(Object.entries(r).map(([k,v])=>[k, Array.isArray(v)?JSON.stringify(v):v]))
+      properties: Object.fromEntries(Object.entries(clean).map(([k,v])=>[k, Array.isArray(v)?JSON.stringify(v):v]))
     };
   });
   const fc = {type:'FeatureCollection', name:'zones_humides', crs:{type:'name', properties:{name:'urn:ogc:def:crs:OGC:1.3:CRS84'}}, features};
@@ -1941,9 +2125,10 @@ function exportGeojson(){
 function exportCsv(){
   const list = getRecords();
   if(list.length===0){ toast('Aucune fiche à exporter'); return; }
-  const keys = Array.from(list.reduce((set,r)=>{ Object.keys(r).forEach(k=>set.add(k)); return set; }, new Set()));
+  const cleanList = list.map(sanitizeRecordForTabularExport);
+  const keys = Array.from(cleanList.reduce((set,r)=>{ Object.keys(r).forEach(k=>set.add(k)); return set; }, new Set()));
   const rows = [keys.join(';')];
-  list.forEach(r=>{
+  cleanList.forEach(r=>{
     rows.push(keys.map(k=>{
       let v = r[k];
       if(Array.isArray(v)) v = v.join(' | ');
@@ -1956,6 +2141,7 @@ function exportCsv(){
   toast('Export CSV téléchargé');
 }
 
+
 /* ===================== Init ===================== */
 document.getElementById('btnSave').addEventListener('click', saveRecord);
 document.getElementById('btnNew').addEventListener('click', ()=>{ if(confirm('Repartir sur une fiche vierge ? La fiche en cours non enregistrée sera perdue.')) newRecord(); });
@@ -1963,6 +2149,7 @@ document.getElementById('btnRecords').addEventListener('click', openRecordsModal
 document.getElementById('btnCloseModal').addEventListener('click', closeModal);
 document.getElementById('btnExportGeojson').addEventListener('click', exportGeojson);
 document.getElementById('btnExportCsv').addEventListener('click', exportCsv);
+document.getElementById('btnExportPhotos').addEventListener('click', exportPhotosZip);
 
 initAuthUI();
 
@@ -1985,6 +2172,12 @@ loadReferentielsFromIDB().then(()=>{
   renderAll();
   if(activeId) showSection(activeId);
   autoLoadReferentiels(); // tente ensuite une version plus fraîche en ligne, si disponible
+});
+
+migrateAllPhotosToIDB().then(()=>{
+  const activeId = currentSectionId;
+  renderAll();
+  if(activeId) showSection(activeId);
 });
 </script>
 </body>
