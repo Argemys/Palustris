@@ -14,6 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Fiche ZH">
 <link rel="apple-touch-icon" href="icon-180.png">
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 <style>
 :root{
   --bg: #EEF0E4;
@@ -332,6 +336,23 @@ footer.bar .btn{flex:1; justify-content:center;}
 </head>
 <body>
 
+<div class="modal-bg show" id="authScreen" style="align-items:center;">
+  <div class="modal" style="max-width:380px; border-radius:16px; width:92%;">
+    <h2 id="authTitle">Connexion</h2>
+    <div class="hint" style="margin-bottom:12px;">Connecte-toi avec le même compte sur chacun de tes appareils pour retrouver toutes tes fiches.</div>
+    <div class="field"><label>Email</label><input type="email" id="authEmail" autocomplete="username"></div>
+    <div class="field"><label>Mot de passe</label><input type="password" id="authPassword" autocomplete="current-password"></div>
+    <div id="authError" class="hint" style="color:var(--rust); min-height:1.2em;"></div>
+    <button class="btn btn-primary" id="btnLogin" type="button" style="width:100%; justify-content:center; margin-bottom:8px;">Se connecter</button>
+    <button class="btn btn-outline" id="btnSignup" type="button" style="width:100%; justify-content:center;">Créer un compte</button>
+    <div class="hint" style="margin-top:12px;">Une connexion réseau est nécessaire la première fois sur un nouvel appareil. Ensuite, l'appli reste utilisable hors connexion.</div>
+    <hr style="border:none; border-top:1px solid var(--line); margin:14px 0;">
+    <button class="btn btn-ghost" id="btnLocalOnly" type="button" style="width:100%; justify-content:center; color:var(--marsh); border:1px solid var(--line);">Continuer sans connexion (fiches sur cet appareil uniquement)</button>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
+
 <header class="app-head">
   <div class="app-head-layout">
     <div class="app-brand">
@@ -342,6 +363,8 @@ footer.bar .btn{flex:1; justify-content:center;}
         <div class="status-row">
           <div class="gps-chip" id="gpsChip"><span class="dot"></span><span id="gpsText">GPS non localisé</span></div>
           <button class="btn btn-outline" id="btnRecords" type="button">📋 Fiches enregistrées (<span id="recCount">0</span>)</button>
+          <div class="gps-chip" id="syncChip" title="État de la synchronisation"><span class="dot"></span><span id="syncText">Synchronisé</span></div>
+          <button class="btn btn-ghost" id="btnLogout" type="button" style="padding:6px 10px; font-size:.72rem;">Déconnexion</button>
         </div>
       </div>
     </div>
@@ -373,7 +396,10 @@ footer.bar .btn{flex:1; justify-content:center;}
   </div>
 </div>
 
+</div>
+
 <script>
+
 /* ===================== Config & helpers ===================== */
 const RATING3 = ['-','+/-','+'];
 const RATING4 = ['--','-','+/-','+'];
@@ -393,6 +419,150 @@ function el(tag, attrs={}, ...kids){
   }
   kids.flat().forEach(k=>{ if(k) e.appendChild(typeof k==='string'?document.createTextNode(k):k); });
   return e;
+}
+
+/* ===================== Firebase — synchronisation en ligne entre appareils =====================
+   ⚠️ À FAIRE AVANT DE DÉPLOYER : remplace les valeurs ci-dessous par celles de TON projet Firebase
+   (gratuit) — Console Firebase → Paramètres du projet → Tes applications → Config SDK.
+   Tant que ces valeurs restent des placeholders, l'appli affiche un message clair au lieu de planter. */
+const firebaseConfig = {
+  apiKey: "COLLE_ICI_TA_CLE_API",
+  authDomain: "COLLE_ICI.firebaseapp.com",
+  projectId: "COLLE_ICI",
+  storageBucket: "COLLE_ICI.appspot.com",
+  messagingSenderId: "COLLE_ICI",
+  appId: "COLLE_ICI"
+};
+const firebaseConfigured = firebaseConfig.apiKey !== "COLLE_ICI_TA_CLE_API";
+
+let auth, db, storage;
+let currentUser = null;
+let recordsCache = [];
+let recordsUnsub = null;
+let localOnlyMode = false;
+
+if(firebaseConfigured){
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+  storage = firebase.storage();
+  db.enablePersistence({synchronizeTabs:true}).catch(err=>{
+    console.warn('Persistance hors connexion Firestore indisponible :', err.code);
+  });
+} else {
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const err = document.getElementById('authError');
+    if(err) err.textContent = "Configuration Firebase manquante — voir le commentaire en haut du script (firebaseConfig).";
+  });
+}
+
+function setSyncStatus(state){
+  // state: 'synced' | 'offline' | 'syncing' | 'error'
+  const chip = document.getElementById('syncChip');
+  const txt = document.getElementById('syncText');
+  if(!chip || !txt) return;
+  chip.classList.toggle('live', state==='synced');
+  const labels = {synced:'Synchronisé', offline:'Hors connexion (en attente)', syncing:'Synchronisation…', error:'Erreur de synchro'};
+  txt.textContent = labels[state] || state;
+}
+
+function translateAuthError(e){
+  const map = {
+    'auth/invalid-email':'Adresse email invalide.',
+    'auth/user-not-found':'Aucun compte avec cet email.',
+    'auth/wrong-password':'Mot de passe incorrect.',
+    'auth/invalid-credential':'Email ou mot de passe incorrect.',
+    'auth/email-already-in-use':'Un compte existe déjà avec cet email — connecte-toi plutôt.',
+    'auth/weak-password':'Mot de passe trop court (6 caractères minimum).',
+    'auth/network-request-failed':"Pas de connexion réseau — une connexion est nécessaire la première fois sur un nouvel appareil."
+  };
+  return map[e.code] || ('Erreur : '+e.message);
+}
+
+function initAuthUI(){
+  const emailInput = document.getElementById('authEmail');
+  const pwInput = document.getElementById('authPassword');
+  const errBox = document.getElementById('authError');
+  document.getElementById('btnLogin').addEventListener('click', ()=>{
+    if(!firebaseConfigured){ errBox.textContent = "Firebase n'est pas encore configuré — utilise \"Continuer sans connexion\" en bas."; return; }
+    errBox.textContent = '';
+    auth.signInWithEmailAndPassword(emailInput.value.trim(), pwInput.value)
+      .catch(e=>{ errBox.textContent = translateAuthError(e); });
+  });
+  document.getElementById('btnSignup').addEventListener('click', ()=>{
+    if(!firebaseConfigured){ errBox.textContent = "Firebase n'est pas encore configuré — utilise \"Continuer sans connexion\" en bas."; return; }
+    errBox.textContent = '';
+    auth.createUserWithEmailAndPassword(emailInput.value.trim(), pwInput.value)
+      .catch(e=>{ errBox.textContent = translateAuthError(e); });
+  });
+  document.getElementById('btnLogout').addEventListener('click', ()=>{
+    if(localOnlyMode){
+      if(confirm('Revenir à l\'écran de connexion ? (les fiches restent sur cet appareil)')){
+        localOnlyMode = false;
+        document.getElementById('authScreen').classList.add('show');
+        document.getElementById('appRoot').style.display = 'none';
+      }
+      return;
+    }
+    if(confirm('Se déconnecter de cet appareil ?')) auth.signOut();
+  });
+  document.getElementById('btnLocalOnly').addEventListener('click', enterLocalOnlyMode);
+
+  if(firebaseConfigured){
+    auth.onAuthStateChanged(user=>{
+      currentUser = user;
+      if(user){
+        localOnlyMode = false;
+        document.getElementById('authScreen').classList.remove('show');
+        document.getElementById('appRoot').style.display = '';
+        startRecordsSync();
+        flushPendingPhotoUploads();
+      } else if(!localOnlyMode){
+        document.getElementById('authScreen').classList.add('show');
+        document.getElementById('appRoot').style.display = 'none';
+        if(recordsUnsub){ recordsUnsub(); recordsUnsub = null; recordsCache = []; }
+      }
+    });
+  } else {
+    // Pas de config Firebase du tout pour l'instant : bascule automatique en mode local,
+    // pas besoin d'un clic supplémentaire pour continuer à travailler sur le terrain.
+    enterLocalOnlyMode();
+  }
+  window.addEventListener('online', ()=>{ if(!localOnlyMode) setSyncStatus(currentUser ? 'synced' : 'offline'); flushPendingPhotoUploads(); });
+  window.addEventListener('offline', ()=>{ if(!localOnlyMode) setSyncStatus('offline'); });
+}
+
+function enterLocalOnlyMode(){
+  localOnlyMode = true;
+  document.getElementById('authScreen').classList.remove('show');
+  document.getElementById('appRoot').style.display = '';
+  document.getElementById('btnLogout').textContent = 'Écran de connexion';
+  setLocalSyncChip();
+  updateRecCount();
+  toast('Mode local activé — fiches stockées sur cet appareil');
+}
+function setLocalSyncChip(){
+  const chip = document.getElementById('syncChip');
+  const txt = document.getElementById('syncText');
+  if(!chip || !txt) return;
+  chip.classList.remove('live');
+  txt.textContent = 'Stockage local (pas de synchro)';
+}
+
+function startRecordsSync(){
+  if(recordsUnsub) recordsUnsub();
+  setSyncStatus('syncing');
+  recordsUnsub = db.collection('users').doc(currentUser.uid).collection('fiches')
+    .onSnapshot(snap=>{
+      recordsCache = snap.docs.map(d=>d.data());
+      setSyncStatus(navigator.onLine ? 'synced' : 'offline');
+      updateRecCount();
+      const modal = document.getElementById('recordsModal');
+      if(modal && modal.classList.contains('show')) openRecordsModal();
+    }, err=>{
+      console.error('Erreur de synchronisation des fiches :', err);
+      setSyncStatus('error');
+    });
 }
 
 /* ===================== Data model ===================== */
@@ -423,11 +593,85 @@ function loadDraft(){
   try{ record = JSON.parse(localStorage.getItem('zh_draft')||'{}'); }catch(e){ record = {}; }
 }
 
-function getRecords(){
-  try{ return JSON.parse(localStorage.getItem('zh_records')||'[]'); }catch(e){ return []; }
+function getLocalRecords(){
+  try{ return JSON.parse(localStorage.getItem('zh_records_local')||'[]'); }catch(e){ return []; }
 }
-function setRecords(list){ localStorage.setItem('zh_records', JSON.stringify(list)); updateRecCount(); }
+function setLocalRecords(list){ localStorage.setItem('zh_records_local', JSON.stringify(list)); updateRecCount(); }
+
+function getRecords(){
+  return localOnlyMode ? getLocalRecords() : recordsCache;
+}
 function updateRecCount(){ document.getElementById('recCount').textContent = getRecords().length; }
+
+/* ===================== Photos : upload Firebase Storage + file d'attente hors connexion =====================
+   Les photos restent en base64 dans la fiche en cours d'édition (comme avant, inchangé). Au moment
+   d'enregistrer, chaque photo est envoyée vers Firebase Storage (hors du document Firestore, qui a
+   une limite de 1 Mo) ; le document ne garde que les URLs. Si l'envoi échoue (hors connexion), la
+   photo est mise en attente et réessayée automatiquement dès que la connexion revient.
+*/
+function getPendingPhotoQueue(){
+  try{ return JSON.parse(localStorage.getItem('zh_pending_photos')||'[]'); }catch(e){ return []; }
+}
+function setPendingPhotoQueue(list){ localStorage.setItem('zh_pending_photos', JSON.stringify(list)); }
+
+async function uploadOnePhoto(ficheId, category, photo){
+  const path = `users/${currentUser.uid}/photos/${ficheId}/${category}_${photo.id||Date.now()}.jpg`;
+  const ref = storage.ref().child(path);
+  await ref.putString(photo.data, 'data_url');
+  const url = await ref.getDownloadURL();
+  return {url, path, name: photo.name, taken_at: photo.taken_at, category};
+}
+
+async function syncFichePhotos(ficheId, photosByCategory){
+  if(!photosByCategory || !firebaseConfigured) return;
+  const uploaded = [];
+  const stillPending = [];
+  for(const category of Object.keys(photosByCategory)){
+    for(const photo of (photosByCategory[category]||[])){
+      if(photo.url){ uploaded.push(photo); continue; } // déjà uploadée précédemment
+      try{
+        const res = await uploadOnePhoto(ficheId, category, photo);
+        uploaded.push(res);
+      }catch(e){
+        stillPending.push({ficheId, category, photo});
+      }
+    }
+  }
+  if(stillPending.length){
+    const queue = getPendingPhotoQueue();
+    setPendingPhotoQueue(queue.concat(stillPending));
+    setSyncStatus('offline');
+  }
+  if(uploaded.length){
+    try{
+      await db.collection('users').doc(currentUser.uid).collection('fiches').doc(ficheId)
+        .update({photos_urls: uploaded});
+    }catch(e){ console.error('Erreur mise à jour URLs photos :', e); }
+  }
+}
+
+async function flushPendingPhotoUploads(){
+  if(!currentUser || !navigator.onLine) return;
+  const queue = getPendingPhotoQueue();
+  if(!queue.length) return;
+  setSyncStatus('syncing');
+  const remaining = [];
+  const byFiche = {};
+  for(const item of queue){
+    try{
+      const res = await uploadOnePhoto(item.ficheId, item.category, item.photo);
+      (byFiche[item.ficheId] = byFiche[item.ficheId]||[]).push(res);
+    }catch(e){ remaining.push(item); }
+  }
+  setPendingPhotoQueue(remaining);
+  for(const ficheId of Object.keys(byFiche)){
+    try{
+      await db.collection('users').doc(currentUser.uid).collection('fiches').doc(ficheId)
+        .update({photos_urls: firebase.firestore.FieldValue.arrayUnion(...byFiche[ficheId])});
+    }catch(e){ console.error('Erreur mise à jour URLs photos (file d\'attente) :', e); }
+  }
+  setSyncStatus(remaining.length ? 'offline' : 'synced');
+}
 
 /* ===================== Espèces : gérées via le catalogue flore importé (voir renderEspecesSearchBlock) ===================== */
 
@@ -1505,21 +1749,43 @@ function toast(msg){
 }
 
 function saveRecord(){
-  const list = getRecords();
   const now = new Date().toISOString();
   const rec = Object.assign({}, record, {
     _id: editingId || ('zh_'+Date.now()),
     _saved_at: now
   });
-  if(editingId){
-    const idx = list.findIndex(r=>r._id===editingId);
+  const wasEditing = !!editingId;
+  const ficheId = rec._id;
+
+  if(localOnlyMode){
+    const list = getLocalRecords();
+    const idx = list.findIndex(r=>r._id===ficheId);
     if(idx>-1) list[idx] = rec; else list.push(rec);
+    setLocalRecords(list);
   } else {
-    list.push(rec);
+    if(!firebaseConfigured){ toast('Firebase non configuré — voir firebaseConfig en haut du script'); return; }
+    if(!currentUser){ toast('Non connecté'); return; }
+    const photosByCategory = rec.photos;
+    // Pas d'attente bloquante sur l'écriture réseau : la persistance hors connexion de Firestore
+    // applique le changement localement tout de suite (donc utilisable sans réseau), et synchronise
+    // automatiquement en tâche de fond dès que la connexion revient.
+    setSyncStatus(navigator.onLine ? 'syncing' : 'offline');
+    db.collection('users').doc(currentUser.uid).collection('fiches').doc(ficheId).set(rec)
+      .then(()=> setSyncStatus('synced'))
+      .catch(e=>{ console.error('Erreur sauvegarde Firestore :', e); setSyncStatus('error'); });
+    syncFichePhotos(ficheId, photosByCategory);
   }
-  setRecords(list);
-  editingId = rec._id;
-  toast('Fiche enregistrée ('+list.length+' au total)');
+
+  // Repartir automatiquement sur une fiche vierge après l'enregistrement, prête pour le
+  // relevé suivant — évite d'écraser la fiche qu'on vient de sauvegarder si on oublie de
+  // toucher "Nouvelle fiche" avant de commencer la suivante.
+  record = {}; editingId = null;
+  localStorage.removeItem('zh_draft');
+  renderAll();
+  document.getElementById('gpsChip').classList.remove('live');
+  document.getElementById('gpsText').textContent = 'GPS non localisé';
+
+  toast((wasEditing ? 'Fiche mise à jour' : 'Fiche enregistrée') + ' — synchronisation automatique');
 }
 
 function newRecord(){
@@ -1547,8 +1813,14 @@ function openRecordsModal(){
     const delBtn = el('button',{class:'btn btn-danger', type:'button'},'Suppr.');
     delBtn.addEventListener('click', ()=>{
       if(confirm('Supprimer cette fiche ?')){
-        setRecords(getRecords().filter(x=>x._id!==r._id));
-        openRecordsModal();
+        if(localOnlyMode){
+          setLocalRecords(getLocalRecords().filter(x=>x._id!==r._id));
+          openRecordsModal();
+        } else {
+          db.collection('users').doc(currentUser.uid).collection('fiches').doc(r._id).delete()
+            .catch(e=>{ console.error('Erreur suppression :', e); toast('Erreur lors de la suppression'); });
+          // La liste se rafraîchit automatiquement via la synchronisation en temps réel (onSnapshot).
+        }
       }
     });
     actions.appendChild(editBtn); actions.appendChild(delBtn);
@@ -1611,6 +1883,8 @@ document.getElementById('btnRecords').addEventListener('click', openRecordsModal
 document.getElementById('btnCloseModal').addEventListener('click', closeModal);
 document.getElementById('btnExportGeojson').addEventListener('click', exportGeojson);
 document.getElementById('btnExportCsv').addEventListener('click', exportCsv);
+
+initAuthUI();
 
 loadDraft();
 renderAll();
