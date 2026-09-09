@@ -392,7 +392,7 @@ footer.bar .btn{flex:1; justify-content:center;}
     <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
       <button class="btn btn-primary" id="btnExportGeojson" type="button">⬇️ Export GeoJSON</button>
       <button class="btn btn-water" id="btnExportCsv" type="button">⬇️ Export CSV</button>
-      <button class="btn btn-outline" id="btnExportPhotos" type="button">📷 Export photos (ZIP)</button>
+      <button class="btn btn-outline" id="btnExportPhotos" type="button">📦 Export complet (CSV + photos, ZIP)</button>
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
   </div>
@@ -2065,14 +2065,32 @@ function downloadBlob(filename, blob){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
+function buildCsvContent(list){
+  const cleanList = list.map(sanitizeRecordForTabularExport);
+  const keys = Array.from(cleanList.reduce((set,r)=>{ Object.keys(r).forEach(k=>set.add(k)); return set; }, new Set()));
+  const rows = [keys.join(';')];
+  cleanList.forEach(r=>{
+    rows.push(keys.map(k=>{
+      let v = r[k];
+      if(Array.isArray(v)) v = v.join(' | ');
+      if(v==null) v = '';
+      v = String(v).replace(/;/g,',').replace(/\n/g,' ');
+      return v;
+    }).join(';'));
+  });
+  return rows.join('\n');
+}
+
 async function exportPhotosZip(){
   const list = getRecords();
   const allFiles = list.flatMap(photoFileList);
-  if(allFiles.length===0){ toast('Aucune photo à exporter'); return; }
+  if(list.length===0){ toast('Aucune fiche à exporter'); return; }
   if(typeof JSZip === 'undefined'){ toast('Bibliothèque ZIP indisponible (pas de réseau au premier chargement ?)'); return; }
 
   toast('Préparation du ZIP…');
   const zip = new JSZip();
+  zip.file('fiches.csv', buildCsvContent(list));
+
   let failed = 0;
   for(const f of allFiles){
     try{
@@ -2096,10 +2114,10 @@ async function exportPhotosZip(){
     }
   }
   const blob = await zip.generateAsync({type:'blob'});
-  downloadBlob('photos_zones_humides_'+Date.now()+'.zip', blob);
+  downloadBlob('export_zones_humides_'+Date.now()+'.zip', blob);
   toast(failed
-    ? `ZIP téléchargé — ${failed} photo(s) indisponible(s) (hors connexion ?)`
-    : 'ZIP des photos téléchargé ('+allFiles.length+' photo(s))');
+    ? `ZIP téléchargé (fiches.csv + photos) — ${failed} photo(s) indisponible(s) (hors connexion ?)`
+    : 'ZIP téléchargé : fiches.csv + '+allFiles.length+' photo(s)');
 }
 
 function exportGeojson(){
@@ -2125,19 +2143,7 @@ function exportGeojson(){
 function exportCsv(){
   const list = getRecords();
   if(list.length===0){ toast('Aucune fiche à exporter'); return; }
-  const cleanList = list.map(sanitizeRecordForTabularExport);
-  const keys = Array.from(cleanList.reduce((set,r)=>{ Object.keys(r).forEach(k=>set.add(k)); return set; }, new Set()));
-  const rows = [keys.join(';')];
-  cleanList.forEach(r=>{
-    rows.push(keys.map(k=>{
-      let v = r[k];
-      if(Array.isArray(v)) v = v.join(' | ');
-      if(v==null) v = '';
-      v = String(v).replace(/;/g,',').replace(/\n/g,' ');
-      return v;
-    }).join(';'));
-  });
-  download('zones_humides_'+Date.now()+'.csv', rows.join('\n'), 'text/csv');
+  download('zones_humides_'+Date.now()+'.csv', buildCsvContent(list), 'text/csv');
   toast('Export CSV téléchargé');
 }
 
