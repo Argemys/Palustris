@@ -746,11 +746,51 @@ function l93ToWgs84(x, y){
   return { lat: phi*180/Math.PI, lon: lambda*180/Math.PI };
 }
 
-/* ===================== Référentiels externes (CORINE Biotopes, catalogue flore) — importables, non inventés ===================== */
-function getCorineReferentiel(){
-  try{ return JSON.parse(localStorage.getItem('zh_corine_ref')||'[]'); }catch(e){ return []; }
+/* ===================== Référentiels externes (CORINE Biotopes, catalogue flore) — importables, non inventés =====================
+   Stockés dans IndexedDB (capacité largement supérieure à localStorage) plutôt que localStorage :
+   le catalogue flore fait à lui seul plusieurs Mo, et localStorage (souvent limité à 5-10 Mo sur
+   mobile) se remplissait trop vite, provoquant des échecs d'enregistrement des fiches sur certains
+   téléphones. L'interface des fonctions ci-dessous reste synchrone (cache en mémoire chargé au
+   démarrage) pour ne rien changer au reste du code qui les utilise. */
+const IDB_NAME = 'zh_referentiels_db';
+const IDB_STORE = 'referentiels';
+function openRefDB(){
+  return new Promise((resolve, reject)=>{
+    if(!window.indexedDB){ reject(new Error('IndexedDB indisponible')); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
 }
-function setCorineReferentiel(list){ safeLocalSet('zh_corine_ref', JSON.stringify(list)); }
+async function idbGet(key){
+  try{
+    const dbi = await openRefDB();
+    return await new Promise((resolve,reject)=>{
+      const tx = dbi.transaction(IDB_STORE,'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }catch(e){ console.warn('IndexedDB indisponible pour la lecture de', key, e); return undefined; }
+}
+async function idbSet(key, value){
+  try{
+    const dbi = await openRefDB();
+    await new Promise((resolve,reject)=>{
+      const tx = dbi.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = ()=> reject(tx.error);
+    });
+    return true;
+  }catch(e){ console.error('Erreur IndexedDB (écriture '+key+') :', e); return false; }
+}
+
+const CORINE_STORAGE_KEY = 'zh_corine_ref';
+let corineRefCache = [];
+function getCorineReferentiel(){ return corineRefCache; }
+function setCorineReferentiel(list){ corineRefCache = list; idbSet(CORINE_STORAGE_KEY, list); }
 
 /* ===================== Catalogues flore — multi-référentiels ===================== */
 // Chaque catalogue définit : son stockage local, son fichier à charger, les champs utilisés
@@ -800,10 +840,31 @@ const CATALOGUES = {
 };
 function getCatalogueSelected(){ return localStorage.getItem('zh_catalogue_selected') || 'alslor'; }
 function setCatalogueSelected(id){ safeLocalSet('zh_catalogue_selected', id); }
-function getFloreReferentiel(catId){
-  try{ return JSON.parse(localStorage.getItem(CATALOGUES[catId].storageKey)||'[]'); }catch(e){ return []; }
+let floreRefCache = {alslor: [], ca: []};
+function getFloreReferentiel(catId){ return floreRefCache[catId] || []; }
+function setFloreReferentiel(catId, list){ floreRefCache[catId] = list; idbSet(CATALOGUES[catId].storageKey, list); }
+
+// Migration ponctuelle : si d'anciennes données de référentiel traînent encore dans localStorage
+// (versions précédentes de l'appli), on les récupère vers IndexedDB puis on les efface de
+// localStorage — ça libère immédiatement l'espace qui posait problème, sans que la personne ait
+// à réimporter quoi que ce soit ni à vider les données du site (ce qui aurait aussi effacé ses fiches).
+async function migrateOldReferentielsFromLocalStorage(){
+  const keys = [CORINE_STORAGE_KEY, CATALOGUES.alslor.storageKey, CATALOGUES.ca.storageKey];
+  for(const key of keys){
+    const raw = localStorage.getItem(key);
+    if(raw!=null){
+      try{ await idbSet(key, JSON.parse(raw)); }catch(e){ console.warn('Migration référentiel échouée pour', key, e); }
+      localStorage.removeItem(key);
+    }
+  }
 }
-function setFloreReferentiel(catId, list){ safeLocalSet(CATALOGUES[catId].storageKey, JSON.stringify(list)); }
+
+async function loadReferentielsFromIDB(){
+  await migrateOldReferentielsFromLocalStorage();
+  corineRefCache = (await idbGet(CORINE_STORAGE_KEY)) || [];
+  floreRefCache.alslor = (await idbGet(CATALOGUES.alslor.storageKey)) || [];
+  floreRefCache.ca = (await idbGet(CATALOGUES.ca.storageKey)) || [];
+}
 
 // Chargement automatique des référentiels depuis les fichiers du dépôt (déposés à côté d'index.html).
 // L'import manuel (boutons "Importer…") reste disponible en secours si ce chargement échoue
@@ -1919,7 +1980,12 @@ if('serviceWorker' in navigator){
   });
 }
 
-autoLoadReferentiels();
+loadReferentielsFromIDB().then(()=>{
+  const activeId = currentSectionId;
+  renderAll();
+  if(activeId) showSection(activeId);
+  autoLoadReferentiels(); // tente ensuite une version plus fraîche en ligne, si disponible
+});
 </script>
 </body>
 </html>
