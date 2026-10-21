@@ -257,6 +257,10 @@ footer.bar .btn{flex:1; justify-content:center;}
 .habitat-row{display:flex; align-items:center; gap:6px; padding:6px 8px; margin-bottom:6px; border:1px solid var(--line); border-radius:8px;}
 .habitat-row .habitat-label{flex:1; font-size:.8rem;}
 .habitat-row input{width:70px; flex:0 0 70px; text-align:right;}
+.especes-typiques{margin:-2px 0 10px 10px; padding-left:8px; border-left:3px solid var(--marsh-light);}
+.especes-typiques .especes-typiques-toggle{padding:4px 6px; font-size:.78rem; font-weight:600; color:var(--marsh-light); background:none; border:none;}
+.espece-chip{border:1px solid var(--marsh-light); background:#fff; color:var(--ink); border-radius:14px; padding:5px 10px; font-size:.75rem; font-style:italic; cursor:pointer;}
+.espece-chip.present{background:var(--marsh-light); color:#fff;}
 .habitat-row .habitat-rm{background:none; border:none; font-weight:700; font-size:1.1rem; cursor:pointer; padding:0 4px;}
 .readonly-box{background:#eef2ec; border:1px dashed var(--line); border-radius:7px; padding:8px 10px; font-family:var(--font-mono); font-size:.85rem;}
 
@@ -818,6 +822,16 @@ async function idbSet(key, value){
 const CORINE_STORAGE_KEY = 'zh_corine_ref';
 let corineRefCache = [];
 function getCorineReferentiel(){ return corineRefCache; }
+
+// Espèces citées pour chaque code dans les descriptions officielles CORINE Biotopes (version
+// française 1997), noms ramenés au catalogue Alsace-Lorraine (TAXREF). p = espèces citées pour le
+// code lui-même ; d = espèces citées dans ses sous-codes (les plus fréquentes d'abord).
+const CORINE_ESPECES_KEY = 'zh_corine_especes';
+let corineEspecesCache = {};
+function setCorineEspeces(list){
+  corineEspecesCache = Object.fromEntries((list||[]).map(x=>[x.code, x]));
+  idbSet(CORINE_ESPECES_KEY, list);
+}
 function setCorineReferentiel(list){ corineRefCache = list; idbSet(CORINE_STORAGE_KEY, list); }
 
 /* ===================== Catalogues flore — multi-référentiels ===================== */
@@ -890,6 +904,7 @@ async function migrateOldReferentielsFromLocalStorage(){
 async function loadReferentielsFromIDB(){
   await migrateOldReferentielsFromLocalStorage();
   corineRefCache = (await idbGet(CORINE_STORAGE_KEY)) || [];
+  corineEspecesCache = Object.fromEntries(((await idbGet(CORINE_ESPECES_KEY)) || []).map(x=>[x.code, x]));
   floreRefCache.alslor = (await idbGet(CATALOGUES.alslor.storageKey)) || [];
   floreRefCache.ca = (await idbGet(CATALOGUES.ca.storageKey)) || [];
 }
@@ -912,6 +927,7 @@ async function autoLoadReferentiel(url, setter){
 async function autoLoadReferentiels(){
   const results = await Promise.all([
     autoLoadReferentiel('corine_biotopes.json', setCorineReferentiel),
+    autoLoadReferentiel('corine_especes.json', setCorineEspeces),
     autoLoadReferentiel(CATALOGUES.alslor.fetchUrl, d=>setFloreReferentiel('alslor', d)),
     autoLoadReferentiel(CATALOGUES.ca.fetchUrl, d=>setFloreReferentiel('ca', d))
   ]);
@@ -1131,6 +1147,7 @@ function renderEspecesSearchBlock(container){
         setVal('especes_selection', list);
         searchInput.value=''; results.innerHTML='';
         renderEspecesSearchBlock(container);
+        if(corineBoxRef) renderCorineBlock(corineBoxRef);
       });
       list.appendChild(item);
     });
@@ -1154,6 +1171,7 @@ function renderEspecesSearchBlock(container){
       selection.splice(idx,1);
       setVal('especes_selection', selection);
       renderEspecesSearchBlock(container);
+      if(corineBoxRef) renderCorineBlock(corineBoxRef);
     });
     list_container.appendChild(el('div',{class:'chk'}, lab, abBtn, rm));
   });
@@ -1848,7 +1866,7 @@ function renderCorineBlock(container){
   });
   container.appendChild(addBtn);
 
-  // Habitats retenus, chacun avec son recouvrement (% de l'entité humide)
+  // Habitats retenus, chacun avec son recouvrement (% de l'entité humide) et ses espèces typiques
   const tags = el('div',{style:'margin-top:10px;'});
   const total = el('div',{class:'hint'});
   function refreshTotal(){
@@ -1881,20 +1899,103 @@ function renderCorineBlock(container){
     });
     row.appendChild(rm);
     tags.appendChild(row);
+    const sugg = renderEspecesTypiques(h.code, idx===habitats.length-1, ()=>renderCorineBlock(container));
+    if(sugg) tags.appendChild(sugg);
   });
   container.appendChild(tags);
   container.appendChild(total);
   refreshTotal();
 }
 
+const RARETE_ORDRE = ['CCC','CC','C','AC','AR','R','RR','RRR'];
+function rareteRang(entry){
+  const i = RARETE_ORDRE.indexOf(entry ? entry['Rareté AlsLor'] : null);
+  return i<0 ? RARETE_ORDRE.length : i;
+}
+// Retrouve une espèce (nom court TAXREF) dans le catalogue choisi, sinon dans le catalogue
+// Alsace-Lorraine (celui qui a servi à normaliser les noms).
+function trouverEspeceCatalogue(nom){
+  const catId = getCatalogueSelected();
+  const cat = CATALOGUES[catId];
+  const inCat = getFloreReferentiel(catId).find(r=>{
+    const n = String(r[cat.nomField]||'');
+    return n===nom || n.startsWith(nom+' ');
+  });
+  if(inCat) return {entry:inCat, catId};
+  const al = getFloreReferentiel('alslor').find(r=>r['Taxon valide court']===nom);
+  return al ? {entry:al, catId:'alslor'} : null;
+}
+const especesTypiquesOuvertes = {};
+let especesBoxRef = null;
+function renderEspecesTypiques(code, ouvertParDefaut, rerender){
+  // Le code exact, sinon le code parent le plus proche (ex. 44.311 → 44.31 → 44.3)
+  let data = null, codeSource = String(code||'').trim();
+  while(codeSource && !(data = corineEspecesCache[codeSource])){
+    codeSource = codeSource.includes('.') ? codeSource.replace(/\.?[0-9]$/,'') : '';
+  }
+  if(!data) return null;
+  const alsLor = Object.fromEntries(getFloreReferentiel('alslor').map(r=>[r['Taxon valide court'], r]));
+  const trier = noms => noms.slice().sort((a,b)=>rareteRang(alsLor[a])-rareteRang(alsLor[b]));
+  // Espèces citées pour le code : les plus communes d'abord ; espèces des sous-codes : les plus
+  // souvent citées d'abord (ordre déjà calculé dans le fichier).
+  const noms = trier(data.p).concat(data.d);
+  if(!noms.length) return null;
+
+  const box = el('div',{class:'especes-typiques'});
+  const ouvert = especesTypiquesOuvertes[code] ?? ouvertParDefaut;
+  const toggle = el('button',{type:'button', class:'btn btn-ghost especes-typiques-toggle'},
+    (ouvert?'▾':'▸')+' 🌿 Espèces typiques ('+noms.length+')'+(codeSource!==code ? ' — d\'après '+codeSource : ''));
+  toggle.addEventListener('click', ()=>{ especesTypiquesOuvertes[code] = !ouvert; rerender(); });
+  box.appendChild(toggle);
+  if(!ouvert) return box;
+
+  box.appendChild(el('div',{class:'hint'},'Touche une espèce pour l\'ajouter au cortège floristique (espèces citées pour ce code d\'abord). Source : descriptions officielles CORINE Biotopes 1997.'));
+  const selection = getVal('especes_selection')||[];
+  const dejaPresente = nom => selection.some(e=>{
+    const c = CATALOGUES[e.catalogue] || CATALOGUES.alslor;
+    const n = String(e[c.nomField]||'');
+    return n===nom || n.startsWith(nom+' ');
+  });
+  const LIMITE = 15;
+  const tout = especesTypiquesOuvertes[code+'_tout'];
+  const chips = el('div',{class:'taglist'});
+  noms.slice(0, tout ? noms.length : LIMITE).forEach(nom=>{
+    const present = dejaPresente(nom);
+    const r = alsLor[nom];
+    const rar = r && champFilled(r['Rareté AlsLor']) ? ' · '+r['Rareté AlsLor'] : '';
+    const chip = el('button',{type:'button', class:'espece-chip'+(present?' present':'')}, (present?'✓ ':'+ ')+nom+rar);
+    chip.addEventListener('click', ()=>{
+      if(present){ toast('Déjà dans le cortège'); return; }
+      const found = trouverEspeceCatalogue(nom);
+      if(!found){ toast('Espèce absente du catalogue chargé'); return; }
+      const list = getVal('especes_selection')||[];
+      list.push(Object.assign({}, found.entry, {abondante:false, catalogue:found.catId}));
+      setVal('especes_selection', list);
+      if(especesBoxRef) renderEspecesSearchBlock(especesBoxRef);
+      rerender();
+    });
+    chips.appendChild(chip);
+  });
+  box.appendChild(chips);
+  if(noms.length > LIMITE){
+    const plus = el('button',{type:'button', class:'btn btn-ghost especes-typiques-toggle'}, tout ? 'Afficher moins' : 'Afficher les '+(noms.length-LIMITE)+' autres espèces');
+    plus.addEventListener('click', ()=>{ especesTypiquesOuvertes[code+'_tout'] = !tout; rerender(); });
+    box.appendChild(plus);
+  }
+  return box;
+}
+
+let corineBoxRef = null;
 function buildEspeces(card){
   card.appendChild(el('h2',{},'Relevé Corine Biotope'));
   const corineBox = el('div',{});
+  corineBoxRef = corineBox;
   card.appendChild(corineBox);
   renderCorineBlock(corineBox);
 
   card.appendChild(el('h2',{},'Cortège floristique'));
   const especesBox = el('div',{});
+  especesBoxRef = especesBox;
   card.appendChild(especesBox);
   renderEspecesSearchBlock(especesBox);
 

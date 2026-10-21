@@ -15,6 +15,14 @@
   directement dans QGIS par glisser-déposer) et export **CSV** (import QGIS via
   "Ajouter une couche de texte délimité", ou Excel).
 
+## Espèces typiques des habitats CORINE
+
+Sous chaque habitat CORINE ajouté, la rubrique « 🌿 Espèces typiques » propose les espèces
+citées pour ce code dans les descriptions officielles CORINE Biotopes (version française 1997),
+puis celles citées dans ses sous-codes (les plus fréquentes d'abord). Un toucher ajoute l'espèce
+au cortège floristique. Les noms anciens ont été ramenés au catalogue Alsace-Lorraine (TAXREF) ;
+les espèces absentes de ce catalogue ne sont pas proposées. Fichier : `corine_especes.json`.
+
 ## Installer sur la tablette Android
 
 Pour un vrai fonctionnement hors ligne réinstallable (icône sur l'écran d'accueil,

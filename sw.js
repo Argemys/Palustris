@@ -1,6 +1,6 @@
-const CACHE_NAME = 'zh-app-v6';
+const CACHE_NAME = 'zh-app-v7';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
-const REFERENTIELS = ['./corine_biotopes.json', './catalogue_flore_alslor_floragis_zh.json', './catalogue_flore_champagne_ardenne.json'];
+const REFERENTIELS = ['./corine_biotopes.json', './corine_especes.json', './catalogue_flore_alslor_floragis_zh.json', './catalogue_flore_champagne_ardenne.json'];
 
 // Fichiers "app shell" : toujours vérifiés en ligne en priorité, pour que les mises à jour
 // se voient dès le prochain chargement (sans avoir besoin de la navigation privée).
