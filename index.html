@@ -2079,7 +2079,21 @@ function toast(msg){
   setTimeout(()=>t.classList.remove('show'), 1800);
 }
 
+// Une fiche sans aucune donnée saisie (hors identifiants techniques / observateur) ne doit pas
+// être enregistrée : elle créerait une fiche « vide » dans la liste (ou écraserait une fiche remplie).
+function recordHasContent(r){
+  return Object.keys(r||{}).some(k=>{
+    if(k.charAt(0)==='_' || k.indexOf('observateur')===0) return false;
+    const v = r[k];
+    if(v==null || v===false || v==='') return false;
+    if(Array.isArray(v)) return v.length>0;
+    if(typeof v==='object') return Object.keys(v).some(c=>Array.isArray(v[c]) ? v[c].length>0 : !!v[c]);
+    return true;
+  });
+}
+
 function saveRecord(){
+  if(!recordHasContent(record)){ toast('Fiche vide : rien à enregistrer'); return; }
   const now = new Date().toISOString();
   const rec = Object.assign({}, record, {
     _id: editingId || record._id || ('zh_'+Date.now()),
