@@ -609,6 +609,22 @@ function loadDraft(){
   try{ record = JSON.parse(localStorage.getItem('zh_draft')||'{}'); }catch(e){ record = {}; }
 }
 
+// Migration : les anciennes versions stockaient les fiches sous 'zh_records'.
+// On les fusionne (sans doublon d'_id) dans 'zh_records_local' ; l'ancienne clé est conservée.
+function migrateLegacyRecords(){
+  try{
+    const legacyRaw = localStorage.getItem('zh_records');
+    if(!legacyRaw) return;
+    const legacy = JSON.parse(legacyRaw);
+    if(!Array.isArray(legacy) || !legacy.length) return;
+    let cur = [];
+    try{ cur = JSON.parse(localStorage.getItem('zh_records_local')||'[]'); }catch(e){ cur = []; }
+    const ids = new Set(cur.map(r=>r && r._id));
+    let added = 0;
+    legacy.forEach(r=>{ if(r && !ids.has(r._id)){ cur.push(r); ids.add(r._id); added++; } });
+    if(added) safeLocalSet('zh_records_local', JSON.stringify(cur));
+  }catch(e){}
+}
 function getLocalRecords(){
   try{ return JSON.parse(localStorage.getItem('zh_records_local')||'[]'); }catch(e){ return []; }
 }
@@ -2161,6 +2177,7 @@ document.getElementById('btnExportGeojson').addEventListener('click', exportGeoj
 document.getElementById('btnExportCsv').addEventListener('click', exportCsv);
 document.getElementById('btnExportPhotos').addEventListener('click', exportPhotosZip);
 
+migrateLegacyRecords();
 initAuthUI();
 
 loadDraft();
