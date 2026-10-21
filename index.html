@@ -254,6 +254,10 @@ footer.bar .btn{flex:1; justify-content:center;}
 .taglist{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
 .tag{background:var(--marsh-light); color:#fff; border-radius:14px; padding:5px 10px; font-size:.75rem; display:flex; align-items:center; gap:6px;}
 .tag button{background:none; border:none; color:#fff; font-weight:700; cursor:pointer; padding:0;}
+.habitat-row{display:flex; align-items:center; gap:6px; padding:6px 8px; margin-bottom:6px; border:1px solid var(--line); border-radius:8px;}
+.habitat-row .habitat-label{flex:1; font-size:.8rem;}
+.habitat-row input{width:70px; flex:0 0 70px; text-align:right;}
+.habitat-row .habitat-rm{background:none; border:none; font-weight:700; font-size:1.1rem; cursor:pointer; padding:0 4px;}
 .readonly-box{background:#eef2ec; border:1px dashed var(--line); border-radius:7px; padding:8px 10px; font-family:var(--font-mono); font-size:.85rem;}
 
 /* ===================== Photos ===================== */
@@ -607,6 +611,9 @@ function migrateLegacyPhoto(){
 
 function loadDraft(){
   try{ record = JSON.parse(localStorage.getItem('zh_draft')||'{}'); }catch(e){ record = {}; }
+  // Une fiche rouverte puis rechargée (appli fermée, page rafraîchie) doit rester liée à sa fiche
+  // enregistrée — sinon le prochain enregistrement créerait un doublon au lieu de la mettre à jour.
+  editingId = record._id || null;
 }
 
 // Migration : les anciennes versions stockaient les fiches sous 'zh_records'.
@@ -1425,6 +1432,10 @@ function createPhotoCategory(category){
         img.src = url;
       } else if(photo.data){
         img.src = photo.data; // secours : ancien format pas encore migré
+      } else {
+        // Image absente de cet appareil (fiche ouverte depuis un autre appareil) : version en ligne si dispo
+        const remote = (getVal('photos_urls')||[]).find(u=>u && u.path && photo.id && u.path.includes(photo.id));
+        if(remote) img.src = remote.url;
       }
       const del = el('button',{class:'photo-delete',type:'button',title:'Supprimer cette photo'},'×');
       del.addEventListener('click',async ()=>{
@@ -1837,20 +1848,43 @@ function renderCorineBlock(container){
   });
   container.appendChild(addBtn);
 
-  const tags = el('div',{class:'taglist', style:'margin-top:10px;'});
+  // Habitats retenus, chacun avec son recouvrement (% de l'entité humide)
+  const tags = el('div',{style:'margin-top:10px;'});
+  const total = el('div',{class:'hint'});
+  function refreshTotal(){
+    const list = getVal('corine_habitats')||[];
+    if(!list.length){ total.textContent=''; return; }
+    const sum = list.reduce((acc,h)=>acc+(parseFloat(h.recouvrement)||0),0);
+    total.textContent = 'Total recouvrement : '+sum+' %'+(sum===100 ? ' ✓' : ' (attendu : 100 %)');
+    total.style.color = sum===100 ? '' : '#b45309';
+  }
   habitats.forEach((h,idx)=>{
-    const tag = el('span',{class:'tag'}, h.code+(h.libelle?' — '+h.libelle:''));
-    const rm = el('button',{type:'button'}, '×');
+    const row = el('div',{class:'habitat-row'});
+    row.appendChild(el('span',{class:'habitat-label'}, h.code+(h.libelle?' — '+h.libelle:'')));
+    const pct = el('input',{type:'number', min:'0', max:'100', step:'1', inputmode:'numeric', placeholder:'%', title:'Recouvrement dans l\'entité humide (%)'});
+    if(h.recouvrement!=null && h.recouvrement!=='') pct.value = h.recouvrement;
+    pct.addEventListener('input', ()=>{
+      const list = getVal('corine_habitats')||[];
+      if(!list[idx]) return;
+      list[idx].recouvrement = pct.value==='' ? '' : Number(pct.value);
+      setVal('corine_habitats', list);
+      refreshTotal();
+    });
+    row.appendChild(pct);
+    row.appendChild(el('span',{},'%'));
+    const rm = el('button',{type:'button', class:'habitat-rm', title:'Retirer cet habitat'}, '×');
     rm.addEventListener('click', ()=>{
       const list = getVal('corine_habitats')||[];
       list.splice(idx,1);
       setVal('corine_habitats', list);
       renderCorineBlock(container);
     });
-    tag.appendChild(rm);
-    tags.appendChild(tag);
+    row.appendChild(rm);
+    tags.appendChild(row);
   });
   container.appendChild(tags);
+  container.appendChild(total);
+  refreshTotal();
 }
 
 function buildEspeces(card){
@@ -1918,6 +1952,7 @@ function renderAll(){
 
     next.addEventListener('click',()=>{
       if(i<SECTIONS.length-1) showSection(SECTIONS[i+1].id);
+      else saveRecord();
     });
 
     nav.appendChild(prev);
@@ -1946,7 +1981,7 @@ function toast(msg){
 function saveRecord(){
   const now = new Date().toISOString();
   const rec = Object.assign({}, record, {
-    _id: editingId || ('zh_'+Date.now()),
+    _id: editingId || record._id || ('zh_'+Date.now()),
     _saved_at: now
   });
   const wasEditing = !!editingId;
@@ -1965,8 +2000,14 @@ function saveRecord(){
     // Les photos ne doivent PAS aller dans le document Firestore de la fiche (limite de 1 Mo par
     // document, et ce serait redondant) : elles partent vers Firebase Storage via syncFichePhotos,
     // qui met à jour photos_urls sur le document une fois chaque upload terminé.
+    // On garde seulement les petites références {id, name, taken_at} (sans image base64) pour
+    // pouvoir réafficher les photos stockées sur l'appareil quand on rouvre la fiche.
     const recForFirestore = Object.assign({}, rec);
     delete recForFirestore.photos;
+    if(photosByCategory && typeof photosByCategory === 'object'){
+      recForFirestore.photos = Object.fromEntries(Object.entries(photosByCategory).map(([cat, arr])=>
+        [cat, (arr||[]).filter(p=>p && p.id).map(p=>({id:p.id, name:p.name||'', taken_at:p.taken_at||''}))]));
+    }
     // Pas d'attente bloquante sur l'écriture réseau : la persistance hors connexion de Firestore
     // applique le changement localement tout de suite (donc utilisable sans réseau), et synchronise
     // automatiquement en tâche de fond dès que la connexion revient.
@@ -1977,16 +2018,15 @@ function saveRecord(){
     syncFichePhotos(ficheId, photosByCategory);
   }
 
-  // Repartir automatiquement sur une fiche vierge après l'enregistrement, prête pour le
-  // relevé suivant — évite d'écraser la fiche qu'on vient de sauvegarder si on oublie de
-  // toucher "Nouvelle fiche" avant de commencer la suivante.
-  record = {}; editingId = null;
-  localStorage.removeItem('zh_draft');
-  renderAll();
-  document.getElementById('gpsChip').classList.remove('live');
-  document.getElementById('gpsText').textContent = 'GPS non localisé';
+  // La fiche reste affichée après l'enregistrement : elle est désormais liée à son identifiant,
+  // donc les modifications suivantes mettront à jour cette même fiche (pas de doublon).
+  // Pour commencer un nouveau relevé : bouton "Nouvelle fiche".
+  editingId = ficheId;
+  record._id = ficheId;
+  record._saved_at = now;
+  saveDraft();
 
-  toast((wasEditing ? 'Fiche mise à jour' : 'Fiche enregistrée') + ' — synchronisation automatique');
+  toast((wasEditing ? 'Fiche mise à jour' : 'Fiche enregistrée') + (localOnlyMode ? ' sur l\'appareil' : ' — synchronisation automatique'));
 }
 
 function newRecord(){
@@ -2015,7 +2055,9 @@ function openRecordsModal(){
     delBtn.addEventListener('click', ()=>{
       if(confirm('Supprimer cette fiche ?')){
         if(localOnlyMode){
-          setLocalRecords(getLocalRecords().filter(x=>x._id!==r._id));
+          if(setLocalRecords(getLocalRecords().filter(x=>x._id!==r._id)) && r._id!==editingId){
+            Object.values(r.photos||{}).forEach(arr=>(arr||[]).forEach(p=>{ if(p && p.id) deletePhotoBlob(p.id); }));
+          }
           openRecordsModal();
         } else {
           db.collection('users').doc(currentUser.uid).collection('fiches').doc(r._id).delete()
@@ -2075,6 +2117,11 @@ function sanitizeRecordForTabularExport(r){
   delete clean.photos;
   delete clean.photos_urls;
   clean.photos_fichiers = files.map(f=>f.filename).join(' | ');
+  if(Array.isArray(clean.corine_habitats)){
+    clean.corine_habitats = clean.corine_habitats.map(h=>
+      h.code + (h.libelle ? ' '+h.libelle : '') + (h.recouvrement!=null && h.recouvrement!=='' ? ' '+h.recouvrement+'%' : '')
+    ).join(' | ');
+  }
   return clean;
 }
 
@@ -2170,7 +2217,7 @@ function exportCsv(){
 
 /* ===================== Init ===================== */
 document.getElementById('btnSave').addEventListener('click', saveRecord);
-document.getElementById('btnNew').addEventListener('click', ()=>{ if(confirm('Repartir sur une fiche vierge ? La fiche en cours non enregistrée sera perdue.')) newRecord(); });
+document.getElementById('btnNew').addEventListener('click', ()=>{ if(confirm('Repartir sur une fiche vierge ? Les modifications non enregistrées de la fiche en cours seront perdues.')) newRecord(); });
 document.getElementById('btnRecords').addEventListener('click', openRecordsModal);
 document.getElementById('btnCloseModal').addEventListener('click', closeModal);
 document.getElementById('btnExportGeojson').addEventListener('click', exportGeojson);
@@ -2186,6 +2233,12 @@ updateRecCount();
 if(getVal('x_l93') && getVal('y_l93')){
   document.getElementById('gpsChip').classList.add('live');
   document.getElementById('gpsText').textContent = 'X '+getVal('x_l93')+' / Y '+getVal('y_l93');
+}
+
+// Demande au navigateur de ne jamais effacer automatiquement les données de l'appli (fiches,
+// photos) pour libérer de la place — sans ça, Android/iOS peuvent vider le stockage d'un site.
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persisted().then(already=>{ if(!already) return navigator.storage.persist(); }).catch(()=>{});
 }
 
 if('serviceWorker' in navigator){
