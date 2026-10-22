@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zh-app-v10';
+const CACHE_NAME = 'zh-app-v11';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 const REFERENTIELS = ['./corine_biotopes.json', './corine_especes.json', './catalogue_flore_alslor_floragis_zh.json', './catalogue_flore_champagne_ardenne.json'];
 
