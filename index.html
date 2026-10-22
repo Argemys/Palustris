@@ -136,7 +136,7 @@ nav.tabs button.active{
   background:var(--marsh-light); color:#fff; border-color:var(--marsh-light);
   box-shadow:0 3px 8px rgba(46,74,54,.35);
 }
-main{padding:14px 12px; max-width:760px; margin:0 auto;}
+main{padding:14px 12px; max-width:760px; margin:0 auto; overflow-x:hidden; overflow-x:clip;}
 .section{display:none;}
 .section.active{display:block; animation:fade .15s ease;}
 @keyframes fade{from{opacity:0}to{opacity:1}}
@@ -2396,30 +2396,71 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
 });
 
 // Glisser vers la gauche → rubrique suivante ; vers la droite → rubrique précédente.
-// Ignoré dans les champs de saisie, les listes défilant horizontalement et pour les gestes
-// surtout verticaux (défilement normal de la page).
+// La page suit le doigt pendant le geste puis glisse jusqu'au bout (ou revient en place si le
+// geste est trop court). La direction est décidée dès les premiers pixels : un geste vertical
+// reste un défilement normal de la page. Pas de glissement depuis le champ en cours de saisie
+// (sélection de texte) ni depuis une zone qui défile horizontalement.
 (function initSwipeSections(){
   const zone = document.getElementById('sections');
-  let x0=null, y0=null, t0=0;
+  let g = null; // geste en cours
+  const activeSec = ()=> document.getElementById('sec_'+currentSectionId);
+  const idx = ()=> SECTIONS.findIndex(s=>s.id===currentSectionId);
+  function setX(sec, x, anim){
+    sec.style.transition = anim ? 'transform '+anim+'ms cubic-bezier(.2,.7,.3,1), opacity '+anim+'ms ease' : 'none';
+    sec.style.transform = x ? 'translate3d('+x+'px,0,0)' : '';
+    sec.style.opacity = x ? String(Math.max(.35, 1 - Math.abs(x)/(zone.clientWidth*1.3))) : '';
+  }
   zone.addEventListener('touchstart', e=>{
-    x0 = null;
+    g = null;
     if(e.touches.length!==1) return;
     const t = e.target;
-    if(t.closest('input, textarea, select, [contenteditable], .no-swipe')) return;
+    if(t.closest('textarea, [contenteditable], input[type=range], .no-swipe') || (t === document.activeElement && t.matches('input'))) return;
     for(let n=t; n && n!==zone; n=n.parentElement){
-      if(n.scrollWidth > n.clientWidth + 2 && getComputedStyle(n).overflowX.match(/auto|scroll/)) return;
+      if(n.scrollWidth > n.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return;
     }
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+    const p = e.touches[0];
+    g = {x0:p.clientX, y0:p.clientY, dir:null, dx:0, lastX:p.clientX, lastT:performance.now(), v:0, sec:activeSec()};
   }, {passive:true});
-  zone.addEventListener('touchend', e=>{
-    if(x0===null) return;
-    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
-    x0 = null;
-    if(Date.now()-t0 > 800 || Math.abs(dx) < 70 || Math.abs(dx) < 1.8*Math.abs(dy)) return;
-    const i = SECTIONS.findIndex(s=>s.id===currentSectionId);
-    const j = dx < 0 ? i+1 : i-1;
-    if(j>=0 && j<SECTIONS.length) showSection(SECTIONS[j].id);
-  }, {passive:true});
+  zone.addEventListener('touchmove', e=>{
+    if(!g || !g.sec) return;
+    const p = e.touches[0];
+    const dx = p.clientX - g.x0, dy = p.clientY - g.y0;
+    if(!g.dir){
+      if(Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      g.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+    if(g.dir!=='h') return;
+    e.preventDefault(); // geste horizontal : on bloque le défilement vertical pendant le glissement
+    const now = performance.now();
+    g.v = (p.clientX - g.lastX) / Math.max(1, now - g.lastT);
+    g.lastX = p.clientX; g.lastT = now;
+    const i = idx();
+    const bord = (dx>0 && i===0) || (dx<0 && i===SECTIONS.length-1);
+    g.dx = bord ? dx/3 : dx; // résistance élastique à la première / dernière rubrique
+    setX(g.sec, g.dx, 0);
+  }, {passive:false});
+  function fin(){
+    if(!g || g.dir!=='h'){ g = null; return; }
+    const {sec, dx, v} = g; g = null;
+    const w = zone.clientWidth, i = idx();
+    const vers = dx < 0 ? 1 : -1; // 1 = suivante
+    const j = i + vers;
+    const valide = j>=0 && j<SECTIONS.length && (Math.abs(dx) > w*0.25 || (Math.abs(v) > 0.35 && Math.abs(dx) > 30 && Math.sign(v)===Math.sign(dx)));
+    if(!valide){ setX(sec, 0, 220); return; }
+    setX(sec, -vers*w, 160);
+    setTimeout(()=>{
+      setX(sec, 0, 0);
+      showSection(SECTIONS[j].id);
+      const nouv = activeSec();
+      nouv.style.animation = 'none';
+      setX(nouv, vers*w*0.35, 0);
+      nouv.getBoundingClientRect(); // applique la position de départ avant l'animation
+      setX(nouv, 0, 220);
+      setTimeout(()=>{ nouv.style.transition=''; nouv.style.animation=''; }, 240);
+    }, 160);
+  }
+  zone.addEventListener('touchend', fin, {passive:true});
+  zone.addEventListener('touchcancel', fin, {passive:true});
 })();
 document.getElementById('btnExportGeojson').addEventListener('click', exportGeojson);
 document.getElementById('btnExportCsv').addEventListener('click', exportCsv);
