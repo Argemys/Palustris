@@ -246,6 +246,18 @@ footer.bar .btn{flex:1; justify-content:center;}
   border-radius:16px 16px 0 0; padding:16px;
 }
 .modal h2{font-family:var(--font-head); margin-top:0;}
+/* En-tête de la liste des fiches : reste visible en haut pendant le défilement, avec la croix de fermeture */
+.modal-head{
+  position:sticky; top:-16px; z-index:2; background:var(--paper);
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  margin:-16px -16px 10px; padding:14px 16px 8px; border-bottom:1px solid var(--line);
+}
+.modal-head h2{margin:0;}
+.modal-close{
+  flex:0 0 auto; width:40px; height:40px; border-radius:50%; border:1px solid var(--line);
+  background:#fff; color:var(--marsh); font-size:1.15rem; font-weight:700; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
 .subcard{border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:10px; background:#fff;}
 .subcard-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
 .subcard-head b{font-size:.82rem; color:var(--marsh);}
@@ -395,7 +407,17 @@ footer.bar .btn{flex:1; justify-content:center;}
 
 <div class="modal-bg" id="recordsModal">
   <div class="modal">
-    <h2>Fiches enregistrées</h2>
+    <div class="modal-head">
+      <h2>Fiches enregistrées</h2>
+      <button class="modal-close" id="btnCloseModalX" type="button" aria-label="Fermer" title="Fermer">✕</button>
+    </div>
+    <label class="hint" for="recordsSort" style="display:block; margin-bottom:4px;">Trier les fiches</label>
+    <select id="recordsSort" style="margin-bottom:10px;">
+      <option value="date_desc">Date : plus récentes d'abord</option>
+      <option value="date_asc">Date : plus anciennes d'abord</option>
+      <option value="num_asc">Numéro : croissant</option>
+      <option value="num_desc">Numéro : décroissant</option>
+    </select>
     <div id="recordsList"></div>
     <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
       <button class="btn btn-primary" id="btnExportGeojson" type="button">⬇️ Export GeoJSON</button>
@@ -2157,12 +2179,38 @@ function newRecord(){
   toast('Nouvelle fiche vierge');
 }
 
+// Tri de la liste des fiches. Date = date d'observation saisie, sinon date de création de la
+// fiche (contenue dans son identifiant interne zh_<horodatage>). Numéro = identifiant de la fiche
+// (planche-ID), comparé « naturellement » : 2 avant 10.
+function getRecordsSort(){ try{ return localStorage.getItem('zh_records_sort') || 'date_desc'; }catch(e){ return 'date_desc'; } }
+function recordDateKey(r){
+  const created = parseInt(String(r._id||'').replace(/^zh_/,''),10) || Date.parse(r._saved_at) || 0;
+  const obs = r.date_obs ? Date.parse(r.date_obs) : NaN;
+  return [isNaN(obs) ? created : obs, created];
+}
+function sortRecords(list, mode){
+  const arr = list.slice();
+  const byDate = (a,b)=>{ const ka=recordDateKey(a), kb=recordDateKey(b); return (ka[0]-kb[0]) || (ka[1]-kb[1]); };
+  const num = r=>String(r.identifiant || r.id_num || '').trim();
+  const byNum = (a,b)=>{
+    const na=num(a), nb=num(b);
+    if(!na || !nb) return (!na) - (!nb); // fiches sans numéro à la fin
+    return na.localeCompare(nb, 'fr', {numeric:true, sensitivity:'base'}) || byDate(a,b);
+  };
+  if(mode==='date_asc') arr.sort(byDate);
+  else if(mode==='num_asc') arr.sort(byNum);
+  else if(mode==='num_desc') arr.sort((a,b)=>{ const na=num(a), nb=num(b); return (!na||!nb) ? byNum(a,b) : byNum(b,a); });
+  else arr.sort((a,b)=>byDate(b,a));
+  return arr;
+}
+
 function openRecordsModal(){
+  document.getElementById('recordsSort').value = getRecordsSort();
   const list = getRecords();
   const box = document.getElementById('recordsList');
   box.innerHTML = '';
   if(list.length===0){ box.appendChild(el('p',{},'Aucune fiche enregistrée pour le moment.')); }
-  list.slice().reverse().forEach(r=>{
+  sortRecords(list, getRecordsSort()).forEach(r=>{
     const row = el('div',{class:'recordrow'});
     const label = (r.identifiant || r._id) + ' — ' + (r.conclusion_zh||'?');
     const meta = (r.x_l93&&r.y_l93)? `X ${r.x_l93}, Y ${r.y_l93}` : 'sans coord.';
@@ -2339,6 +2387,40 @@ document.getElementById('btnSave').addEventListener('click', saveRecord);
 document.getElementById('btnNew').addEventListener('click', ()=>{ if(confirm('Repartir sur une fiche vierge ? Les modifications non enregistrées de la fiche en cours seront perdues.')) newRecord(); });
 document.getElementById('btnRecords').addEventListener('click', openRecordsModal);
 document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+document.getElementById('btnCloseModalX').addEventListener('click', closeModal);
+// Toucher en dehors de la fenêtre (sur le fond grisé) ferme la liste
+document.getElementById('recordsModal').addEventListener('click', e=>{ if(e.target.id==='recordsModal') closeModal(); });
+document.getElementById('recordsSort').addEventListener('change', e=>{
+  try{ localStorage.setItem('zh_records_sort', e.target.value); }catch(err){}
+  openRecordsModal();
+});
+
+// Glisser vers la gauche → rubrique suivante ; vers la droite → rubrique précédente.
+// Ignoré dans les champs de saisie, les listes défilant horizontalement et pour les gestes
+// surtout verticaux (défilement normal de la page).
+(function initSwipeSections(){
+  const zone = document.getElementById('sections');
+  let x0=null, y0=null, t0=0;
+  zone.addEventListener('touchstart', e=>{
+    x0 = null;
+    if(e.touches.length!==1) return;
+    const t = e.target;
+    if(t.closest('input, textarea, select, [contenteditable], .no-swipe')) return;
+    for(let n=t; n && n!==zone; n=n.parentElement){
+      if(n.scrollWidth > n.clientWidth + 2 && getComputedStyle(n).overflowX.match(/auto|scroll/)) return;
+    }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+  }, {passive:true});
+  zone.addEventListener('touchend', e=>{
+    if(x0===null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    if(Date.now()-t0 > 800 || Math.abs(dx) < 70 || Math.abs(dx) < 1.8*Math.abs(dy)) return;
+    const i = SECTIONS.findIndex(s=>s.id===currentSectionId);
+    const j = dx < 0 ? i+1 : i-1;
+    if(j>=0 && j<SECTIONS.length) showSection(SECTIONS[j].id);
+  }, {passive:true});
+})();
 document.getElementById('btnExportGeojson').addEventListener('click', exportGeojson);
 document.getElementById('btnExportCsv').addEventListener('click', exportCsv);
 document.getElementById('btnExportPhotos').addEventListener('click', exportPhotosZip);
