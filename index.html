@@ -113,10 +113,16 @@ header.app-head{
 .btn-danger{background:var(--rust); color:#fff;}
 .btn:active{transform:scale(.97);}
 nav.tabs{
-  display:flex; overflow-x:auto; gap:6px; padding:8px 10px 12px;
+  overflow:hidden; touch-action:pan-y;
   background:var(--paper); position:relative;
   box-shadow:0 2px 10px rgba(0,0,0,.10);
   border-bottom:1px solid var(--line);
+}
+/* Bande des onglets : déplacée par transform (même image que la page pendant un glissement,
+   ce que le défilement natif ne garantit pas sur iPhone) ; on la fait glisser au doigt. */
+.tabs-strip{
+  display:flex; gap:6px; padding:8px 10px 12px; width:max-content;
+  position:relative; will-change:transform;
 }
 nav.tabs button{
   flex:0 0 auto; background:transparent; color:var(--ink-soft);
@@ -442,7 +448,7 @@ footer.bar .btn{flex:1; justify-content:center;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 16</span>
+      <span>Palustris · version 17</span>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
   </div>
@@ -1363,52 +1369,90 @@ function refreshTabProgress(){
 }
 
 // Pastille de l'onglet actif. from/to : index de rubriques ; t (0→1) : avancement du glissement.
-// La position de la pastille et le défilement horizontal de la barre sont calculés ensemble et
-// animés image par image (même durée, même courbe) : pas de décalage entre les deux, et pendant
-// un glissement la barre suit le doigt au lieu de rattraper son retard à la fin.
+// La pastille et la bande d'onglets sont déplacées uniquement par transform, au même moment que
+// la page (même image) : pendant un glissement, c'est la boucle d'animation du geste qui les pilote.
 let tabState = null, tabAnim = null;
-function tabTarget(nav, bA, bB, t){
+const TAB_D = 260;
+const easeOut = x => 1 - Math.pow(1-x, 3);
+function tabEls(){
+  const nav = document.getElementById('tabs');
+  const strip = nav && nav.querySelector('.tabs-strip');
+  return {nav, strip, ind: strip && strip.querySelector('.tab-ind')};
+}
+function clampTabOffset(o){
+  const {nav, strip} = tabEls();
+  const max = Math.max(0, strip.offsetWidth - nav.clientWidth);
+  return Math.min(max, Math.max(0, o));
+}
+function tabTarget(bA, bB, t){
+  const {nav} = tabEls();
   const lerp = (a,b)=> a + (b-a)*t;
   const left = lerp(bA.offsetLeft, bB.offsetLeft), width = lerp(bA.offsetWidth, bB.offsetWidth);
-  const max = Math.max(0, nav.scrollWidth - nav.clientWidth);
-  const scroll = Math.min(max, Math.max(0, left + width/2 - nav.clientWidth/2));
-  return {left, width, scroll};
+  return {left, width, offset: clampTabOffset(left + width/2 - nav.clientWidth/2)};
 }
-function applyTabState(nav, ind, st){
-  ind.style.transform = 'translateX('+st.left+'px)';
+function applyTabState(st){
+  const {strip, ind} = tabEls();
+  ind.style.transform = 'translate3d('+st.left+'px,0,0)';
   ind.style.width = st.width+'px';
-  if(Math.abs(nav.scrollLeft - st.scroll) > .5) nav.scrollLeft = st.scroll;
+  strip.style.transform = 'translate3d('+(-st.offset)+'px,0,0)';
   tabState = st;
 }
 function moveTabIndicator(from, to, t, immediat){
-  const nav = document.getElementById('tabs');
-  const ind = nav && nav.querySelector('.tab-ind');
-  const bA = nav && nav.querySelector('button[data-id="'+SECTIONS[from].id+'"]');
+  const {nav, strip, ind} = tabEls();
+  const bA = strip && strip.querySelector('button[data-id="'+SECTIONS[from].id+'"]');
   if(!ind || !bA || !nav.clientWidth) return;
-  const bB = (to!=null && SECTIONS[to]) ? nav.querySelector('button[data-id="'+SECTIONS[to].id+'"]') : bA;
+  const bB = (to!=null && SECTIONS[to]) ? strip.querySelector('button[data-id="'+SECTIONS[to].id+'"]') : bA;
   ind.style.top = bA.offsetTop+'px';
   ind.style.height = bA.offsetHeight+'px';
   const proche = (t>=.5 && to!=null) ? to : from; // l'onglet le plus couvert par la pastille
   ind.style.setProperty('--accent', SECTIONS[proche].accent);
-  nav.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.id===SECTIONS[proche].id));
+  strip.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.id===SECTIONS[proche].id));
 
-  const target = tabTarget(nav, bA, bB, t);
+  const target = tabTarget(bA, bB, t);
   if(tabAnim){ cancelAnimationFrame(tabAnim); tabAnim = null; }
-  if(immediat || !tabState){ applyTabState(nav, ind, target); return; }
-  const start = {left:tabState.left, width:tabState.width, scroll:nav.scrollLeft};
-  const D = 260, t0 = performance.now();
-  const ease = x => 1 - Math.pow(1-x, 3);
+  if(immediat || !tabState){ applyTabState(target); return; }
+  const start = Object.assign({}, tabState), t0 = performance.now();
   const step = now=>{
-    const k = ease(Math.min(1, (now - t0)/D));
-    applyTabState(nav, ind, {
+    const k = easeOut(Math.min(1, (now - t0)/TAB_D));
+    applyTabState({
       left: start.left + (target.left-start.left)*k,
       width: start.width + (target.width-start.width)*k,
-      scroll: start.scroll + (target.scroll-start.scroll)*k
+      offset: start.offset + (target.offset-start.offset)*k
     });
     tabAnim = k<1 ? requestAnimationFrame(step) : null;
   };
   tabAnim = requestAnimationFrame(step);
 }
+
+// Faire glisser la bande d'onglets au doigt (ou à la molette) pour atteindre une rubrique éloignée.
+(function initTabsDrag(){
+  const nav = document.getElementById('tabs');
+  let d = null, moved = false;
+  nav.addEventListener('touchstart', e=>{
+    if(e.touches.length!==1 || !tabState) return;
+    d = {x0:e.touches[0].clientX, y0:e.touches[0].clientY, o0:tabState.offset, dir:null};
+    moved = false;
+  }, {passive:true});
+  nav.addEventListener('touchmove', e=>{
+    if(!d) return;
+    const dx = e.touches[0].clientX - d.x0, dy = e.touches[0].clientY - d.y0;
+    if(!d.dir){ if(Math.abs(dx)<6 && Math.abs(dy)<6) return; d.dir = Math.abs(dx)>Math.abs(dy) ? 'h' : 'v'; }
+    if(d.dir!=='h') return;
+    e.preventDefault(); moved = true;
+    if(tabAnim){ cancelAnimationFrame(tabAnim); tabAnim = null; }
+    applyTabState(Object.assign({}, tabState, {offset: clampTabOffset(d.o0 - dx)}));
+  }, {passive:false});
+  nav.addEventListener('touchend', ()=>{ d = null; }, {passive:true});
+  // un glissement de la bande ne doit pas ouvrir l'onglet sous le doigt
+  nav.addEventListener('click', e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  nav.addEventListener('wheel', e=>{
+    if(!tabState) return;
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if(!delta) return;
+    e.preventDefault();
+    applyTabState(Object.assign({}, tabState, {offset: clampTabOffset(tabState.offset + delta)}));
+  }, {passive:false});
+})();
 
 function computeIdentifiant(){
   const ref = (getVal('planche_reference')||'').trim();
@@ -2172,11 +2216,13 @@ function renderAll(){
   const tabsEl = document.getElementById('tabs');
   const secEl = document.getElementById('sections');
   tabsEl.innerHTML = ''; secEl.innerHTML = '';
+  const strip = el('div',{class:'tabs-strip'});
+  tabsEl.appendChild(strip);
   SECTIONS.forEach((s,i)=>{
     const btn = el('button',{}, s.title, el('span',{class:'tab-prog'}));
     btn.addEventListener('click', ()=>showSection(s.id));
     btn.dataset.id = s.id;
-    tabsEl.appendChild(btn);
+    strip.appendChild(btn);
 
     const sec = el('div',{class:'section', id:'sec_'+s.id});
     sec.style.setProperty('--accent', s.accent);
@@ -2212,7 +2258,7 @@ function renderAll(){
     sec.appendChild(card);
     secEl.appendChild(sec);
   });
-  tabsEl.appendChild(el('span',{class:'tab-ind'}));
+  strip.appendChild(el('span',{class:'tab-ind'}));
   tabState = null; // nouvelle barre : la pastille se place directement
   showSection(SECTIONS[0].id);
   refreshTabProgress();
@@ -2227,7 +2273,7 @@ function showSection(id, opts={}){
   });
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.id===id));
   const i = SECTIONS.findIndex(s=>s.id===id);
-  moveTabIndicator(i, null, 0, false);
+  moveTabIndicator(i, null, 0, !!opts.swipe);
   if(!opts.swipe) window.scrollTo({top:0, behavior:'instant'});
 }
 
@@ -2771,18 +2817,23 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
     const w = cur.offsetWidth + GAP;
     const fast = Math.abs(v) > 0.35 && Math.abs(dx) > 30 && Math.sign(v)===Math.sign(dx);
     const ok = nb && (Math.abs(dx) > cur.offsetWidth*0.3 || fast);
-    const D = 240;
     busy = true;
-    if(!ok){
-      moveTabIndicator(i, null, 0, false);
-      place(cur, 0, D);
-      if(nb) place(nb, side*w, D);
-      setTimeout(()=>{ reset(cur); if(nb){ reset(nb); nb.classList.remove('swipe-peek'); } busy = false; }, D+20);
-      return;
-    }
-    place(cur, -side*w, D);
-    place(nb, 0, D);
-    setTimeout(()=>{
+    // Une seule boucle d'animation déplace la page, la voisine, la pastille et la bande
+    // d'onglets : même durée, même courbe, même image — aucun décalage possible entre elles.
+    const x0 = dx, x1 = ok ? -side*w : 0;
+    const t0 = nb ? Math.min(1, Math.abs(dx)/w) : 0, t1 = ok ? 1 : 0;
+    const start = performance.now();
+    const frame = now=>{
+      const k = easeOut(Math.min(1, (now - start)/TAB_D));
+      const x = x0 + (x1 - x0)*k;
+      place(cur, x, 0);
+      if(nb){ place(nb, x + side*w, 0); moveTabIndicator(i, i+side, t0 + (t1 - t0)*k, true); }
+      else moveTabIndicator(i, null, 0, true);
+      if(k < 1){ requestAnimationFrame(frame); return; }
+      if(!ok){
+        reset(cur); if(nb){ reset(nb); nb.classList.remove('swipe-peek'); }
+        busy = false; return;
+      }
       // La voisine devient la rubrique affichée, sans saut : on garde sa position à l'écran.
       const before = nb.getBoundingClientRect().top;
       reset(cur); reset(nb); nb.classList.remove('swipe-peek');
@@ -2790,7 +2841,8 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
       const after = nb.getBoundingClientRect().top;
       if(Math.abs(after - before) > 0.5) window.scrollTo({top: window.scrollY + (after - before), behavior:'instant'});
       busy = false;
-    }, D+20);
+    };
+    requestAnimationFrame(frame);
   }
   zone.addEventListener('touchend', fin, {passive:true});
   zone.addEventListener('touchcancel', fin, {passive:true});
