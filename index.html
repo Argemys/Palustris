@@ -429,7 +429,10 @@ footer.bar .btn{flex:1; justify-content:center;}
   <div class="modal">
     <div class="modal-head">
       <h2>Fiches enregistrées</h2>
-      <button class="modal-close" id="btnCloseModalX" type="button" aria-label="Fermer" title="Fermer">✕</button>
+      <div style="display:flex; gap:8px;">
+        <button class="modal-close" id="btnRecordsBottom" type="button" aria-label="Aller en bas de la liste" title="Aller en bas (exports, sauvegarde)">⬇</button>
+        <button class="modal-close" id="btnCloseModalX" type="button" aria-label="Fermer" title="Fermer">✕</button>
+      </div>
     </div>
     <div id="backupBanner" class="backup-banner"></div>
     <label class="hint" for="recordsSort" style="display:block; margin-bottom:4px;">Trier les fiches</label>
@@ -448,7 +451,8 @@ footer.bar .btn{flex:1; justify-content:center;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 17</span>
+      <span>Palustris · version 18</span>
+      <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
   </div>
@@ -2729,6 +2733,13 @@ document.getElementById('btnNew').addEventListener('click', ()=>{ if(confirm('Re
 document.getElementById('btnRecords').addEventListener('click', openRecordsModal);
 document.getElementById('btnCloseModal').addEventListener('click', closeModal);
 document.getElementById('btnCloseModalX').addEventListener('click', closeModal);
+// Aller directement en bas (exports, sauvegarde) ou en haut de la liste des fiches
+document.getElementById('btnRecordsBottom').addEventListener('click', ()=>{
+  const m = document.querySelector('#recordsModal .modal'); m.scrollTo({top:m.scrollHeight, behavior:'smooth'});
+});
+document.getElementById('btnRecordsTop').addEventListener('click', ()=>{
+  document.querySelector('#recordsModal .modal').scrollTo({top:0, behavior:'smooth'});
+});
 document.getElementById('restoreInput').addEventListener('change', e=>{
   const f = e.target.files[0]; e.target.value = '';
   if(f && confirm('Restaurer les fiches de « '+f.name+' » ?\nLes fiches absentes seront ajoutées, celles plus récentes dans la sauvegarde seront mises à jour. Rien n\'est supprimé.')) restaurerSauvegarde(f);
