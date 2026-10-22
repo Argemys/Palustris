@@ -52,7 +52,6 @@ header.app-head{
   background:var(--paper);
   color:var(--marsh);
   padding:10px 16px 8px;
-  position:sticky; top:0; z-index:50;
 }
 .app-head-layout{
   display:grid;
@@ -122,7 +121,9 @@ header.app-head .sub{font-size:.72rem;color:var(--ink-soft);white-space:nowrap;}
 .btn:active{transform:scale(.97);}
 nav.tabs{
   display:flex; overflow-x:auto; gap:6px; padding:8px 10px 12px;
-  background:var(--paper); position:sticky; top:78px; z-index:49;
+  /* Barre des rubriques toujours visible en haut de l'écran pendant le défilement (l'en-tête,
+     trop haut sur téléphone/tablette, défile normalement). */
+  background:var(--paper); position:sticky; top:0; z-index:49;
   box-shadow:0 2px 10px rgba(0,0,0,.10);
   border-bottom:1px solid var(--line);
 }
@@ -335,7 +336,6 @@ footer.bar .btn{flex:1; justify-content:center;}
   header.app-head h1{font-size:.88rem;}
   header.app-head .sub{font-size:.62rem;}
   .app-wordmark{font-size:1.8rem;letter-spacing:.03em;}
-  nav.tabs{top:67px; background:var(--paper);}
   .status-row{gap:6px;margin-top:5px;}
   .gps-chip{font-size:.65rem;padding:5px 7px;}
   .status-row .btn{font-size:.68rem;padding:6px 8px;}
@@ -2068,7 +2068,11 @@ function renderAll(){
 function showSection(id){
   currentSectionId = id;
   document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active', s.id==='sec_'+id));
-  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.id===id));
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.id===id);
+    // garde la rubrique active visible dans la barre (défilement horizontal sur petit écran)
+    if(b.dataset.id===id) b.parentElement.scrollTo({left: b.offsetLeft - (b.parentElement.clientWidth - b.offsetWidth)/2, behavior:'smooth'});
+  });
   window.scrollTo({top:0, behavior:'instant'});
 }
 
