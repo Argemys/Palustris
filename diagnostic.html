@@ -10,69 +10,88 @@ h1{font-size:1.1rem;}
 h2{font-size:.95rem; margin-top:24px; color:#8fd; border-bottom:1px solid #444; padding-bottom:4px;}
 pre{background:#000; padding:10px; border-radius:6px; overflow-x:auto; white-space:pre-wrap; word-break:break-all; font-size:12px; border:1px solid #333;}
 .ok{color:#8f8;} .warn{color:#fc6;} .err{color:#f66;}
-button{padding:10px 16px; margin:4px 4px 4px 0; border-radius:8px; border:1px solid #555; background:#222; color:#eee; font-size:14px;}
+button{padding:12px 16px; margin:4px 4px 4px 0; border-radius:8px; border:1px solid #555; background:#222; color:#eee; font-size:15px;}
+table{border-collapse:collapse; width:100%; font-size:12px;} td,th{border:1px solid #333; padding:4px; text-align:left;}
 </style>
 </head>
 <body>
 <h1>🔍 Diagnostic stockage — FloraGIS ZH</h1>
-<div id="out">Analyse en cours…</div>
-
-<h2>Actions</h2>
 <button id="btnDownload">⬇️ Télécharger tout en JSON (sauvegarde de secours)</button>
+<div id="out">Analyse en cours…</div>
 
 <script>
 const out = document.getElementById('out');
-let html = '';
-
-function esc(s){ return String(s).replace(/</g,'&lt;'); }
-
-// 1. localStorage
-html += '<h2>localStorage</h2>';
-const lsKeys = Object.keys(localStorage);
-html += `<p>${lsKeys.length} clé(s) trouvée(s) : ${esc(lsKeys.join(', ')||'(aucune)')}</p>`;
-
-const recordsRaw = localStorage.getItem('zh_records_local');
-if(recordsRaw == null){
-  html += `<p class="err">❌ zh_records_local : ABSENTE du localStorage (donnée effacée à ce niveau).</p>`;
-} else {
-  try{
-    const parsed = JSON.parse(recordsRaw);
-    html += `<p class="ok">✅ zh_records_local présente et lisible : ${parsed.length} fiche(s).</p>`;
-    html += '<pre>'+esc(JSON.stringify(parsed, null, 2)).slice(0,4000)+'</pre>';
-  }catch(e){
-    html += `<p class="warn">⚠️ zh_records_local présente MAIS illisible (JSON corrompu) — la donnée brute existe peut-être encore récupérable :</p>`;
-    html += '<pre>'+esc(recordsRaw).slice(0,4000)+'</pre>';
-  }
-}
-
-const draftRaw = localStorage.getItem('zh_draft');
-html += draftRaw ? `<p class="ok">Brouillon en cours (zh_draft) présent.</p>` : `<p>Pas de brouillon en cours.</p>`;
-
-out.innerHTML = html;
-
-// 2. IndexedDB (catalogues + photos)
-async function checkIDB(){
-  let idbHtml = '<h2>IndexedDB</h2>';
-  try{
-    const dbs = indexedDB.databases ? await indexedDB.databases() : null;
-    idbHtml += dbs ? `<p>Bases trouvées : ${esc(dbs.map(d=>d.name+' (v'+d.version+')').join(', ')||'(aucune)')}</p>`
-                   : '<p class="warn">indexedDB.databases() non supporté sur ce navigateur — impossible de lister automatiquement.</p>';
-  }catch(e){
-    idbHtml += '<p class="err">Erreur lecture IndexedDB : '+esc(e.message)+'</p>';
-  }
-  out.innerHTML += idbHtml;
-}
-checkIDB();
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function add(h){ out.innerHTML += h; }
 
 document.getElementById('btnDownload').addEventListener('click', ()=>{
-  const dump = {};
-  for(const k of Object.keys(localStorage)) dump[k] = localStorage.getItem(k);
-  const blob = new Blob([JSON.stringify(dump, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'diagnostic_localstorage_'+Date.now()+'.json';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  try{
+    const dump = {};
+    for(const k of Object.keys(localStorage)) dump[k] = localStorage.getItem(k);
+    const blob = new Blob([JSON.stringify(dump, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'diagnostic_localstorage_'+Date.now()+'.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }catch(e){ alert('Erreur : '+e.message); }
 });
+
+function filled(r){
+  let n = 0;
+  Object.keys(r||{}).forEach(k=>{
+    if(k.charAt(0)==='_') return;
+    const v = r[k];
+    if(v==null || v===false || v==='') return;
+    if(Array.isArray(v) && !v.length) return;
+    n++;
+  });
+  return n;
+}
+
+out.innerHTML = '';
+try{
+  add('<h2>Contenu du stockage de ce site</h2>');
+  add('<p>Adresse : '+esc(location.href)+'</p>');
+  const keys = Object.keys(localStorage);
+  let rows = '<table><tr><th>Clé</th><th>Taille (caractères)</th></tr>';
+  keys.forEach(k=>{ let n=0; try{ n=(localStorage.getItem(k)||'').length; }catch(e){} rows += '<tr><td>'+esc(k)+'</td><td>'+n+'</td></tr>'; });
+  add(rows+'</table>');
+  if(!keys.length) add('<p class="err">Aucune donnée : le stockage de ce site est vide (autre adresse, autre navigateur, ou données effacées).</p>');
+}catch(e){ add('<p class="err">Impossible de lire le stockage : '+esc(e.message)+'</p>'); }
+
+['zh_records_local','zh_records'].forEach(key=>{
+  try{
+    const raw = localStorage.getItem(key);
+    add('<h2>Fiches : '+key+'</h2>');
+    if(raw==null){ add('<p>Clé absente.</p>'); return; }
+    const list = JSON.parse(raw);
+    if(!Array.isArray(list)){ add('<p class="warn">Format inattendu.</p>'); return; }
+    add('<p class="ok">'+list.length+' fiche(s).</p>');
+    let t = '<table><tr><th>#</th><th>Identifiant</th><th>Enregistrée le</th><th>Champs remplis</th></tr>';
+    list.forEach((r,i)=>{
+      const n = filled(r);
+      let d=''; try{ d = r._saved_at ? new Date(r._saved_at).toLocaleString('fr-FR') : ''; }catch(e){}
+      t += '<tr><td>'+(i+1)+'</td><td>'+esc(r.identifiant||r._id||'?')+'</td><td>'+esc(d)+'</td><td class="'+(n? 'ok':'err')+'">'+n+(n?'':' (VIDE)')+'</td></tr>';
+    });
+    add(t+'</table>');
+  }catch(e){ add('<p class="warn">Lecture impossible ('+esc(e.message)+') — la sauvegarde JSON ci-dessus contient quand même les données brutes.</p>'); }
+});
+
+try{
+  const d = localStorage.getItem('zh_draft');
+  add('<h2>Brouillon en cours</h2>');
+  if(!d) add('<p>Aucun brouillon.</p>');
+  else { let n='?'; try{ n=filled(JSON.parse(d)); }catch(e){} add('<p class="ok">Brouillon présent ('+n+' champs remplis).</p>'); }
+}catch(e){}
+
+(async function(){
+  try{
+    add('<h2>IndexedDB</h2>');
+    if(!indexedDB.databases){ add('<p class="warn">Non listable sur ce navigateur.</p>'); return; }
+    const dbs = await indexedDB.databases();
+    add('<p>'+esc(dbs.map(d=>d.name).join(', ')||'(aucune)')+'</p>');
+  }catch(e){ add('<p class="err">'+esc(e.message)+'</p>'); }
+})();
 </script>
 </body>
 </html>
