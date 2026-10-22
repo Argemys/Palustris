@@ -404,7 +404,7 @@ footer.bar .btn{flex:1; justify-content:center;}
 header.app-head{position:relative; overflow:hidden;}
 header.app-head canvas.contours{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
 .app-head-row{position:relative;}
-.app-wordmark{font-family:var(--f-serif); font-style:italic;}
+.app-wordmark{font-family:var(--f-serif); font-style:italic; font-size:1.8rem;}
 .head-btn{font-family:var(--f-type); border-radius:4px; font-size:.8rem;}
 
 /* -- onglets de classeur (la pastille devient l'onglet actif, toujours glissante) -- */
@@ -431,7 +431,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
 /* bandeau = étiquette d'herbier + ligne d'eau + illustration au trait */
 .card-banner{
   position:relative; margin:-14px -14px 20px -34px; padding:12px 92px 24px 34px;
-  font-family:var(--f-serif); font-weight:700; font-size:1.22rem; letter-spacing:0;
+  font-family:var(--f-serif); font-weight:700; font-size:1.36rem; letter-spacing:0;
 }
 .card-banner .eyebrow{display:block; font-family:var(--f-type); font-weight:400; font-size:.72rem; letter-spacing:.16em; text-transform:uppercase; opacity:.88; margin-bottom:2px;}
 .card-banner .ill{position:absolute; right:14px; top:6px; width:70px; height:70px; opacity:.34; stroke:#fff; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;}
@@ -448,13 +448,13 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
 .card h3{font-family:var(--f-type); font-weight:700; letter-spacing:.1em; font-size:.74rem;}
 
 /* champs : intitulés tapés à la machine, saisie sur une ligne de carnet */
-.field label{font-family:var(--f-type); font-weight:400; font-size:.76rem; color:var(--ink-soft);}
+.field label{font-family:var(--f-type); font-weight:400; font-size:.8rem; color:var(--ink-soft);}
 .section input[type=text], .section input[type=number], .section input[type=date], .section select{
   border:none; border-bottom:1.5px solid #8E9A86; border-radius:3px 3px 0 0; background:rgba(255,255,255,.62);
 }
 .section textarea{border:1px solid var(--line); border-radius:3px; background:rgba(255,255,255,.62);}
 .section input:focus, .section select:focus, .section textarea:focus{outline:2px solid var(--accent, var(--marsh-light)); outline-offset:1px;}
-.hint{font-family:var(--f-hand); font-weight:500; font-size:1.05rem; line-height:1.15; color:var(--pencil);}
+.hint{font-family:var(--f-hand); font-weight:500; font-size:1.22rem; line-height:1.15; color:var(--pencil);}
 .section .pill.sel{background:var(--accent, var(--marsh-light)); border-color:var(--accent, var(--marsh-light));}
 #identifiantBox{
   display:inline-block; font-family:var(--f-type); font-weight:700; font-size:1.05rem; color:var(--ink);
@@ -479,7 +479,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
 .photo-item img{aspect-ratio:4/3; height:auto;}
 .photo-item .photo-legende{
   display:block; width:100%; border:none !important; background:transparent !important; border-radius:0 !important;
-  font-family:var(--f-hand); font-weight:500; font-size:1.1rem; color:var(--ink-soft); padding:3px 2px 0; outline:none;
+  font-family:var(--f-hand); font-weight:500; font-size:1.28rem; color:var(--ink-soft); padding:3px 2px 0; outline:none;
 }
 .photo-item .photo-legende::placeholder{color:#9AA096;}
 .photo-delete{top:8px; right:8px; z-index:2;}
@@ -526,13 +526,13 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
   padding:7px 8px 7px 10px; gap:6px; font-size:.86rem;
 }
 .cortege .chk label{flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px;}
-.cortege .sp{font-family:var(--f-serif); font-style:italic; font-size:.92rem;}
+.cortege .sp{font-family:var(--f-serif); font-style:italic; font-size:1.02rem;}
 .cortege .t{font-family:var(--f-type); font-style:normal; font-size:.68rem; font-weight:700; border:1px solid currentColor; padding:0 4px; border-radius:2px; color:var(--ink-soft);}
 .cortege .t.zh{color:var(--water-light);}
 .cortege .t.prot{color:var(--stamp);}
 .cortege label.abondant{color:inherit; text-decoration:none; font-weight:400;}
 .cortege label.abondant .sp{text-decoration:underline wavy var(--stamp); text-underline-offset:3px;}
-.espece-chip{font-family:var(--f-serif); font-size:.78rem; border-radius:3px;}
+.espece-chip{font-family:var(--f-serif); font-size:.86rem; border-radius:3px;}
 
 /* -- barre du bas : onde à l'enregistrement -- */
 #btnSave{position:relative; overflow:hidden;}
@@ -617,7 +617,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 19</span>
+      <span>Palustris · version 20</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
