@@ -1,5 +1,5 @@
-const CACHE_NAME = 'zh-app-v18';
-const ASSETS = ['./', './index.html', './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './fond-palustris-etang.jpg', './palustris-logo.png'];
+const CACHE_NAME = 'zh-app-v19';
+const ASSETS = ['./', './index.html', './manifest.json', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './fond-palustris-etang.jpg', './palustris-logo.png', './fonts/courier-prime-latin-400-normal.woff2', './fonts/courier-prime-latin-700-normal.woff2', './fonts/caveat-latin-500-normal.woff2', './fonts/caveat-latin-700-normal.woff2', './fonts/libre-baskerville-latin-400-italic.woff2', './fonts/libre-baskerville-latin-700-normal.woff2'];
 const REFERENTIELS = ['./corine_biotopes.json', './corine_especes.json', './catalogue_flore_alslor_floragis_zh.json', './catalogue_flore_champagne_ardenne.json'];
 
 // Fichiers "app shell" : toujours vérifiés en ligne en priorité, pour que les mises à jour

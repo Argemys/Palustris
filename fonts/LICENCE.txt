@@ -1,0 +1,8 @@
+Polices embarquées dans Palustris (fichiers .woff2, sous-ensemble latin), toutes sous
+licence SIL Open Font License 1.1 (https://openfontlicense.org) :
+
+- Caveat — Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat)
+- Courier Prime — Copyright 2015 The Courier Prime Project Authors (https://github.com/quoteunquoteapps/CourierPrime)
+- Libre Baskerville — Copyright 2012 The Libre Baskerville Project Authors (https://github.com/impallari/Libre-Baskerville)
+
+Fichiers issus des paquets @fontsource (version 5.1.0).
