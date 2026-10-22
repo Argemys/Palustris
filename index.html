@@ -24,8 +24,8 @@
   --bg: #EEF0E4;
   --paper: #FBFBF6;
   --ink: #1C2620;
-  --ink-soft: #4A5750;
-  --line: #C9CEBE;
+  --ink-soft: #343F38;
+  --line: #A9B19C;
   --marsh: #2E4A36;
   --marsh-light: #4C7358;
   --water: #24506A;
@@ -54,57 +54,42 @@ body::before{
   content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
   background:var(--bg) url('fond-palustris-etang.jpg') center center / cover no-repeat;
 }
+/* En-tête compact sur une ligne : logo + nom à gauche, GPS et fiches à droite */
 header.app-head{
   background:var(--paper);
   color:var(--marsh);
-  padding:10px 16px 8px;
+  padding:6px 12px;
+  border-bottom:1px solid var(--line);
 }
-.app-head-layout{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
-  align-items:center;
-  gap:18px;
-  max-width:1400px;
-  margin:0 auto;
+.app-head-row{
+  display:flex; align-items:center; gap:10px;
+  max-width:1400px; margin:0 auto;
 }
-.app-brand{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-width:0;
-}
+.app-brand{display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto;}
 .app-brand-logo{
-  width:58px;
-  height:58px;
-  flex:0 0 58px;
-  border-radius:14px;
-  object-fit:cover;
-  box-shadow:0 2px 7px rgba(0,0,0,.12);
+  width:38px; height:38px; flex:0 0 38px; border-radius:10px;
+  object-fit:cover; box-shadow:0 1px 4px rgba(0,0,0,.15);
 }
-.app-brand-text{min-width:0;}
-header.app-head h1{
-  font-family:var(--font-head);
-  font-size:1.05rem;
-  margin:0 0 2px;
-  font-weight:700;
-  letter-spacing:.2px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-header.app-head .sub{font-size:.72rem;color:var(--ink-soft);white-space:nowrap;}
 .app-wordmark{
   font-family:'Baskerville','Iowan Old Style','Palatino Linotype',Georgia,serif;
-  font-size:clamp(2rem,4vw,3.25rem);
-  line-height:1;
-  font-weight:400;
-  font-style:italic;
-  letter-spacing:.06em;
-  color:var(--marsh);
-  white-space:nowrap;
+  font-size:1.65rem; line-height:1; font-weight:400; font-style:italic;
+  letter-spacing:.04em; color:var(--marsh); white-space:nowrap;
 }
 .app-wordmark::first-letter{color:var(--marsh-light);}
-.status-row{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
+.head-actions{display:flex; align-items:center; gap:6px; flex:0 0 auto;}
+.head-btn{
+  position:relative; display:inline-flex; align-items:center; gap:5px;
+  border:1px solid var(--line); background:#fff; color:var(--marsh);
+  border-radius:20px; padding:7px 11px; font-size:.82rem; font-weight:700;
+  font-family:var(--font-body); cursor:pointer; white-space:nowrap;
+}
+.head-btn.gps-ok{background:var(--chip-bg); color:var(--chip-fg); border-color:var(--chip-bg);}
+.head-btn.gps-todo{background:#fff4dc; color:#7a5500; border-color:#d9b25a;}
+.head-btn .alert-dot{
+  position:absolute; top:-3px; right:-3px; width:12px; height:12px; border-radius:50%;
+  background:var(--rust); border:2px solid var(--paper); display:none;
+}
+.head-btn.needs-backup .alert-dot{display:block;}
 .gps-chip{
   font-family:var(--font-mono);
   background:var(--chip-bg); color:var(--chip-fg);
@@ -138,10 +123,24 @@ nav.tabs button{
   border:1px solid var(--line); padding:8px 12px; border-radius:20px; font-size:.78rem;
   font-family:var(--font-body); font-weight:600; white-space:nowrap; cursor:pointer;
 }
-nav.tabs button.active{
-  background:var(--marsh-light); color:#fff; border-color:var(--marsh-light);
-  box-shadow:0 3px 8px rgba(46,74,54,.35);
+nav.tabs button{position:relative; z-index:1; transition:color .2s, border-color .2s;}
+nav.tabs button.active{color:#fff; border-color:transparent;}
+/* Pastille verte de l'onglet actif : elle glisse d'un onglet à l'autre (et suit le doigt) */
+nav.tabs .tab-ind{
+  position:absolute; z-index:0; top:8px; height:0; left:0; width:0; border-radius:20px;
+  background:var(--accent, var(--marsh-light)); box-shadow:0 3px 8px rgba(46,74,54,.35);
+  transition:left .28s cubic-bezier(.2,.75,.3,1), width .28s cubic-bezier(.2,.75,.3,1), background-color .28s;
 }
+nav.tabs .tab-ind.dragging{transition:none;}
+/* Avancement de la rubrique : vide (rien), commencée (point orange), remplie (coche verte) */
+nav.tabs button .tab-prog{
+  display:inline-block; width:15px; margin-left:5px; font-size:.72rem; line-height:1; vertical-align:1px;
+}
+nav.tabs button .tab-prog.started::before{content:'●'; color:#D08A12;}
+nav.tabs button .tab-prog.done::before{content:'✓'; color:#2F7A45; font-weight:800;}
+nav.tabs button.active .tab-prog.started::before{color:#FFD27A;}
+nav.tabs button.active .tab-prog.done::before{color:#C9F5D6;}
+.section .card{border-top:4px solid var(--accent, var(--marsh-light));}
 main{padding:14px 12px; max-width:760px; margin:0 auto; overflow-x:hidden; overflow-x:clip; position:relative;}
 .section.swipe-peek{pointer-events:none;}
 .section{display:none;}
@@ -233,9 +232,12 @@ footer.bar .btn{flex:1; justify-content:center;}
 .hint{font-size:.72rem; color:var(--ink-soft); margin-top:2px;}
 .badge{background:var(--amber); color:#fff; font-size:.65rem; padding:2px 7px; border-radius:10px; margin-left:6px;}
 .recordrow{
-  display:flex; justify-content:space-between; align-items:center; padding:10px 0;
+  display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0;
   border-bottom:1px solid var(--line); font-size:.85rem;
 }
+.recordrow > div:first-child{flex:1 1 200px; min-width:0; font-weight:600;}
+.recordrow .rmeta{font-weight:400;}
+.recordrow .btn{padding:8px 11px; font-size:.8rem;}
 .recordrow .rmeta{color:var(--ink-soft); font-size:.72rem; font-family:var(--font-mono);}
 .toast{
   position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
@@ -261,6 +263,14 @@ footer.bar .btn{flex:1; justify-content:center;}
   margin:-16px -16px 10px; padding:14px 16px 8px; border-bottom:1px solid var(--line);
 }
 .modal-head h2{margin:0;}
+.modal-foot{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-size:.75rem; color:var(--ink-soft);}
+.backup-banner{border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:.85rem; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.backup-banner.ok{background:#e6f3e9; color:#1f5a32; border:1px solid #9ccaa9;}
+.backup-banner.warn{background:#fff1dc; color:#6e4300; border:1px solid #e0a94a;}
+.backup-banner .btn{padding:7px 11px; font-size:.8rem;}
+.check-list{margin:0 0 12px; padding:0; list-style:none;}
+.check-list li{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:.9rem;}
+.check-list li .btn{padding:6px 10px; font-size:.78rem; flex:0 0 auto;}
 .modal-close{
   flex:0 0 auto; width:40px; height:40px; border-radius:50%; border:1px solid var(--line);
   background:#fff; color:var(--marsh); font-size:1.15rem; font-weight:700; cursor:pointer;
@@ -350,15 +360,8 @@ footer.bar .btn{flex:1; justify-content:center;}
 .section-nav .btn{min-width:130px;}
 
 @media (max-width:700px){
-  header.app-head{padding:8px 10px 7px;}
-  .app-head-layout{grid-template-columns:minmax(0,1fr) auto; gap:8px;}
-  .app-brand-logo{width:48px;height:48px;flex-basis:48px;border-radius:12px;}
-  header.app-head h1{font-size:.88rem;}
-  header.app-head .sub{font-size:.62rem;}
-  .app-wordmark{font-size:1.8rem;letter-spacing:.03em;}
-  .status-row{gap:6px;margin-top:5px;}
   .gps-chip{font-size:.65rem;padding:5px 7px;}
-  .status-row .btn{font-size:.68rem;padding:6px 8px;}
+}
 }
 
 </style>
@@ -383,22 +386,16 @@ footer.bar .btn{flex:1; justify-content:center;}
 <div id="appRoot" style="display:none;">
 
 <header class="app-head">
-  <div class="app-head-layout">
+  <div class="app-head-row">
     <div class="app-brand">
-      <img class="app-brand-logo" src="palustris-logo.png" alt="Palustris">
-      <div class="app-brand-text">
-        <h1>Inventaire zones humides — Terrain</h1>
-        <div class="sub">Saisie hors connexion · export GeoJSON / CSV · version 14</div>
-        <div class="status-row">
-          <div class="gps-chip" id="gpsChip"><span class="dot"></span><span id="gpsText">GPS non localisé</span></div>
-          <button class="btn btn-outline" id="btnRecords" type="button">📋 Fiches enregistrées (<span id="recCount">0</span>)</button>
-          <div class="gps-chip" id="syncChip" title="État de la synchronisation"><span class="dot"></span><span id="syncText">Synchronisé</span></div>
-          <button class="btn btn-ghost" id="btnLogout" type="button" style="padding:6px 10px; font-size:.72rem;">Déconnexion</button>
-        </div>
-      </div>
+      <img class="app-brand-logo" src="palustris-logo.png" alt="">
+      <div class="app-wordmark" title="Inventaire zones humides — terrain">Palustris</div>
     </div>
-    <div class="app-wordmark" aria-label="Palustris">Palustris</div>
-    <div></div>
+    <div class="head-actions">
+      <button class="head-btn gps-todo" id="gpsChip" type="button" title="Localiser la fiche (GPS)">📍 <span id="gpsText">GPS</span></button>
+      <div class="gps-chip" id="syncChip" title="État de la synchronisation" style="display:none;"><span class="dot"></span><span id="syncText">Synchronisé</span></div>
+      <button class="head-btn" id="btnRecords" type="button" title="Fiches enregistrées">📋 <span id="recCount">0</span><span class="alert-dot"></span></button>
+    </div>
   </div>
 </header>
 
@@ -419,6 +416,7 @@ footer.bar .btn{flex:1; justify-content:center;}
       <h2>Fiches enregistrées</h2>
       <button class="modal-close" id="btnCloseModalX" type="button" aria-label="Fermer" title="Fermer">✕</button>
     </div>
+    <div id="backupBanner" class="backup-banner"></div>
     <label class="hint" for="recordsSort" style="display:block; margin-bottom:4px;">Trier les fiches</label>
     <select id="recordsSort" style="margin-bottom:10px;">
       <option value="date_desc">Date : plus récentes d'abord</option>
@@ -431,7 +429,12 @@ footer.bar .btn{flex:1; justify-content:center;}
       <button class="btn btn-primary" id="btnExportGeojson" type="button">⬇️ Export GeoJSON</button>
       <button class="btn btn-water" id="btnExportCsv" type="button">⬇️ Export CSV</button>
       <button class="btn btn-outline" id="btnExportPhotos" type="button">📦 Export complet (CSV + photos, ZIP)</button>
+      <label class="btn btn-outline" style="cursor:pointer;">♻️ Restaurer une sauvegarde (ZIP)<input type="file" id="restoreInput" accept=".zip,application/zip" style="display:none;"></label>
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
+    </div>
+    <div class="modal-foot">
+      <span>Palustris · version 15</span>
+      <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
   </div>
 </div>
@@ -550,6 +553,7 @@ function initAuthUI(){
       .catch(e=>{ errBox.textContent = translateAuthError(e); });
   });
   document.getElementById('btnLogout').addEventListener('click', ()=>{
+    closeModal();
     if(localOnlyMode){
       if(confirm('Revenir à l\'écran de connexion ? (les fiches restent sur cet appareil)')){
         localOnlyMode = false;
@@ -569,6 +573,8 @@ function initAuthUI(){
         localOnlyMode = false;
         document.getElementById('authScreen').classList.remove('show');
         document.getElementById('appRoot').style.display = '';
+        document.getElementById('syncChip').style.display = '';
+        document.getElementById('btnLogout').style.display = '';
         startRecordsSync();
         flushPendingPhotoUploads();
       } else if(!localOnlyMode){
@@ -591,8 +597,13 @@ function enterLocalOnlyMode(){
   document.getElementById('authScreen').classList.remove('show');
   document.getElementById('appRoot').style.display = '';
   document.getElementById('btnLogout').textContent = 'Écran de connexion';
+  // Sans synchronisation configurée, l'écran de connexion ne sert à rien : bouton masqué
+  document.getElementById('btnLogout').style.display = firebaseConfigured ? '' : 'none';
+  document.getElementById('syncChip').style.display = 'none';
   setLocalSyncChip();
   updateRecCount();
+  // l'appli vient d'apparaître : place la pastille de l'onglet actif maintenant que la barre a une taille
+  requestAnimationFrame(()=>{ const i = SECTIONS.findIndex(s=>s.id===currentSectionId); if(i>-1) moveTabIndicator(i, null, 0, true); });
   toast('Mode local activé — fiches stockées sur cet appareil');
 }
 function setLocalSyncChip(){
@@ -624,8 +635,10 @@ let record = {}; // current in-progress record (key/value, including structured 
 let editingId = null;
 let currentSectionId = null;
 
-function setVal(key, val){ record[key] = val; saveDraft(); }
-function getVal(key){ return record[key]; }
+function setVal(key, val){ record[key] = val; saveDraft(); scheduleProgressRefresh(); }
+function getVal(key){ if(buildingSectionKeys) buildingSectionKeys.add(key); return record[key]; }
+let buildingSectionKeys = null;   // champs lus pendant la construction de la rubrique en cours
+const SECTION_KEYS = {};          // id de rubrique → champs de cette rubrique
 
 function saveDraft(){ try{ localStorage.setItem('zh_draft', JSON.stringify(record)); }catch(e){ console.warn('Brouillon non sauvegardé (stockage plein) :', e); } }
 
@@ -678,7 +691,7 @@ function setLocalRecords(list){
 function getRecords(){
   return localOnlyMode ? getLocalRecords() : recordsCache;
 }
-function updateRecCount(){ document.getElementById('recCount').textContent = getRecords().length; }
+function updateRecCount(){ document.getElementById('recCount').textContent = getRecords().length; refreshBackupState(); }
 
 /* ===================== Photos : upload Firebase Storage + file d'attente hors connexion =====================
    Les photos restent en base64 dans la fiche en cours d'édition (comme avant, inchangé). Au moment
@@ -1267,35 +1280,96 @@ function numberListSelectable(keyPrefix, items, min, max){
 }
 
 /* ===================== GPS ===================== */
-function locate(){
+// Bouton GPS de l'en-tête : « GPS ✓ » quand la fiche est localisée, « Localiser » sinon.
+// Les coordonnées complètes restent affichées dans la rubrique Identification.
+function refreshGpsChip(){
   const chip = document.getElementById('gpsChip');
   const txt = document.getElementById('gpsText');
-  txt.textContent = 'Localisation en cours…';
-  if(!navigator.geolocation){ txt.textContent='GPS indisponible sur cet appareil'; return; }
+  if(!chip || !txt) return;
+  const ok = !!(getVal('x_l93') && getVal('y_l93'));
+  chip.classList.toggle('gps-ok', ok);
+  chip.classList.toggle('gps-todo', !ok);
+  txt.textContent = ok ? 'GPS ✓' : 'Localiser';
+}
+function locate(){
+  const txt = document.getElementById('gpsText');
+  txt.textContent = '…';
+  if(!navigator.geolocation){ refreshGpsChip(); toast('GPS indisponible sur cet appareil'); return; }
   navigator.geolocation.getCurrentPosition(pos=>{
     const l93 = wgs84ToL93(pos.coords.latitude, pos.coords.longitude);
     const x = l93.x.toFixed(2), y = l93.y.toFixed(2);
     setVal('x_l93', x); setVal('y_l93', y); setVal('gps_precision', Math.round(pos.coords.accuracy));
-    chip.classList.add('live');
-    txt.textContent = `X ${x} / Y ${y} (L93, ±${Math.round(pos.coords.accuracy)} m)`;
+    refreshGpsChip();
+    toast(`📍 X ${x} / Y ${y} (L93, ±${Math.round(pos.coords.accuracy)} m)`, 3000);
     const xF = document.getElementById('f_x_l93'); if(xF) xF.value = x;
     const yF = document.getElementById('f_y_l93'); if(yF) yF.value = y;
     const inline = document.getElementById('gpsInline'); if(inline) inline.textContent = `X ${x} / Y ${y}`;
   }, err=>{
-    txt.textContent = 'Échec localisation — ' + err.message;
+    refreshGpsChip();
+    toast('Échec de la localisation — ' + err.message, 3000);
   }, {enableHighAccuracy:true, timeout:15000});
 }
 
 /* ===================== Sections ===================== */
+// accent : couleur de la rubrique (pastille d'onglet, liseré de la carte)
+// essentiels : champs qui font passer la rubrique de « commencée » à « remplie »
+// (rubrique sans essentiels : remplie dès qu'un champ est renseigné)
 const SECTIONS = [
-  {id:'ident', title:'1. Identification', build: buildIdent},
-  {id:'delim', title:'2. Délimitation', build: buildDelim},
-  {id:'pedologie', title:'3. Pédologie', build: buildPedologie},
-  {id:'fonctions', title:'4. Fonctions & Atteintes', build: buildFonctions},
-  {id:'usages', title:'5. Usages & Valeurs', build: buildUsages},
-  {id:'especes', title:'6. Espèces & Habitats', build: buildEspeces},
-  {id:'actions', title:'7. Préconisations', build: buildActions},
+  {id:'ident', title:'1. Identification', build: buildIdent, accent:'#4C7358', essentiels:['observateur_type','id_num','x_l93','y_l93','date_obs']},
+  {id:'delim', title:'2. Délimitation', build: buildDelim, accent:'#2F6A86', essentiels:['delim_statut','conclusion_zh']},
+  {id:'pedologie', title:'3. Pédologie', build: buildPedologie, accent:'#8A5A2B', essentiels:['sondages']},
+  {id:'fonctions', title:'4. Fonctions & Atteintes', build: buildFonctions, accent:'#2E6E68', essentiels:[]},
+  {id:'usages', title:'5. Usages & Valeurs', build: buildUsages, accent:'#8C6516', essentiels:[]},
+  {id:'especes', title:'6. Espèces & Habitats', build: buildEspeces, accent:'#4F7A2E', essentiels:['corine_habitats','especes_selection']},
+  {id:'actions', title:'7. Préconisations', build: buildActions, accent:'#A6432A', essentiels:[]},
 ];
+
+// Une valeur compte comme renseignée si elle n'est pas vide (texte, liste, objet).
+function valeurRenseignee(v){
+  if(v==null || v===false) return false;
+  if(Array.isArray(v)) return v.length>0;
+  if(typeof v==='object') return Object.values(v).some(valeurRenseignee);
+  return String(v).trim()!=='' && String(v).trim()!=='_';
+}
+function sectionProgress(sec){
+  const keys = SECTION_KEYS[sec.id] || new Set();
+  const nb = [...keys].filter(k=>valeurRenseignee(record[k])).length;
+  if(nb===0) return 'empty';
+  if(!sec.essentiels.length) return 'done';
+  return sec.essentiels.every(k=>valeurRenseignee(record[k])) ? 'done' : 'started';
+}
+let progressRaf = null;
+function scheduleProgressRefresh(){
+  if(progressRaf) return;
+  progressRaf = requestAnimationFrame(()=>{ progressRaf = null; refreshTabProgress(); refreshGpsChip(); });
+}
+function refreshTabProgress(){
+  SECTIONS.forEach(sec=>{
+    const dot = document.querySelector('nav.tabs button[data-id="'+sec.id+'"] .tab-prog');
+    if(!dot) return;
+    const st = sectionProgress(sec);
+    dot.className = 'tab-prog' + (st==='empty' ? '' : ' '+st);
+    dot.title = st==='done' ? 'Rubrique remplie' : st==='started' ? 'Rubrique commencée' : 'Rubrique vide';
+  });
+}
+
+// Pastille de l'onglet actif. from/to : index de rubriques ; t (0→1) : avancement du glissement.
+function moveTabIndicator(from, to, t, dragging){
+  const nav = document.getElementById('tabs');
+  const ind = nav && nav.querySelector('.tab-ind');
+  const bA = nav && nav.querySelector('button[data-id="'+SECTIONS[from].id+'"]');
+  if(!ind || !bA) return;
+  const bB = (to!=null && SECTIONS[to]) ? nav.querySelector('button[data-id="'+SECTIONS[to].id+'"]') : bA;
+  const lerp = (a,b)=> a + (b-a)*t;
+  ind.classList.toggle('dragging', !!dragging);
+  ind.style.left = lerp(bA.offsetLeft, bB.offsetLeft)+'px';
+  ind.style.width = lerp(bA.offsetWidth, bB.offsetWidth)+'px';
+  ind.style.top = bA.offsetTop+'px';
+  ind.style.height = bA.offsetHeight+'px';
+  const proche = (t>=.5 && to!=null) ? to : from; // l'onglet le plus couvert par la pastille
+  ind.style.setProperty('--accent', SECTIONS[proche].accent);
+  nav.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.id===SECTIONS[proche].id));
+}
 
 function computeIdentifiant(){
   const ref = (getVal('planche_reference')||'').trim();
@@ -2060,14 +2134,16 @@ function renderAll(){
   const secEl = document.getElementById('sections');
   tabsEl.innerHTML = ''; secEl.innerHTML = '';
   SECTIONS.forEach((s,i)=>{
-    const btn = el('button',{}, s.title);
+    const btn = el('button',{}, s.title, el('span',{class:'tab-prog'}));
     btn.addEventListener('click', ()=>showSection(s.id));
     btn.dataset.id = s.id;
     tabsEl.appendChild(btn);
 
     const sec = el('div',{class:'section', id:'sec_'+s.id});
+    sec.style.setProperty('--accent', s.accent);
     const card = el('div',{class:'card'});
-    s.build(card);
+    buildingSectionKeys = new Set(s.essentiels);
+    try{ s.build(card); } finally { SECTION_KEYS[s.id] = buildingSectionKeys; buildingSectionKeys = null; }
 
     // Navigation entre les pages
     const nav = el('div',{class:'section-nav'});
@@ -2083,7 +2159,7 @@ function renderAll(){
 
     next.addEventListener('click',()=>{
       if(i<SECTIONS.length-1) showSection(SECTIONS[i+1].id);
-      else saveRecord();
+      else terminerFiche();
     });
 
     nav.appendChild(prev);
@@ -2093,7 +2169,9 @@ function renderAll(){
     sec.appendChild(card);
     secEl.appendChild(sec);
   });
+  tabsEl.appendChild(el('span',{class:'tab-ind'}));
   showSection(SECTIONS[0].id);
+  refreshTabProgress();
 }
 // opts.swipe : arrivée par glissement — pas de fondu (la page est déjà visible) et la position
 // de défilement est gérée par le geste.
@@ -2108,14 +2186,18 @@ function showSection(id, opts={}){
     // garde la rubrique active visible dans la barre (défilement horizontal sur petit écran)
     if(b.dataset.id===id) b.parentElement.scrollTo({left: b.offsetLeft - (b.parentElement.clientWidth - b.offsetWidth)/2, behavior:'smooth'});
   });
+  const i = SECTIONS.findIndex(s=>s.id===id);
+  moveTabIndicator(i, null, 0, false);
   if(!opts.swipe) window.scrollTo({top:0, behavior:'instant'});
 }
 
 /* ===================== Save / records / export ===================== */
-function toast(msg){
+let toastTimer = null;
+function toast(msg, ms=1800){
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 1800);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), ms);
 }
 
 // Une fiche sans aucune donnée saisie (hors identifiants techniques / observateur) ne doit pas
@@ -2129,6 +2211,54 @@ function recordHasContent(r){
     if(typeof v==='object') return Object.keys(v).some(c=>Array.isArray(v[c]) ? v[c].length>0 : !!v[c]);
     return true;
   });
+}
+
+// Oublis importants signalés au moment de « Terminer » (l'enregistrement reste possible).
+function verifierFiche(){
+  const pb = [];
+  const v = k => valeurRenseignee(record[k]);
+  if(!v('id_num')) pb.push({msg:'Pas d\'ID de fiche', section:'ident'});
+  if(!v('x_l93') || !v('y_l93')) pb.push({msg:'Pas de coordonnées GPS', section:'ident'});
+  if(!v('date_obs')) pb.push({msg:'Pas de date d\'observation', section:'ident'});
+  if(!v('conclusion_zh')) pb.push({msg:'Pas de conclusion « zone humide »', section:'delim'});
+  const hab = record.corine_habitats || [];
+  if(!hab.length) pb.push({msg:'Aucun habitat CORINE', section:'especes'});
+  else {
+    const sansPct = hab.filter(h=>h.recouvrement==null || h.recouvrement==='').length;
+    const total = hab.reduce((a,h)=>a+(parseFloat(h.recouvrement)||0),0);
+    if(sansPct) pb.push({msg:sansPct+' habitat(s) sans recouvrement', section:'especes'});
+    else if(total!==100) pb.push({msg:'Recouvrements des habitats : total '+total+' % (au lieu de 100 %)', section:'especes'});
+  }
+  if(!v('especes_selection')) pb.push({msg:'Cortège floristique vide', section:'especes'});
+  return pb;
+}
+function terminerFiche(){
+  const pb = verifierFiche();
+  if(!pb.length){ saveRecord(); return; }
+  let bg = document.getElementById('checkModal');
+  if(bg) bg.remove();
+  bg = el('div',{class:'modal-bg show', id:'checkModal'});
+  const box = el('div',{class:'modal'});
+  const close = ()=>bg.remove();
+  const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕');
+  x.addEventListener('click', close);
+  box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Avant d\'enregistrer'), x));
+  box.appendChild(el('p',{class:'hint', style:'font-size:.85rem;'},'Quelques éléments manquent ou sont à vérifier :'));
+  const ul = el('ul',{class:'check-list'});
+  pb.forEach(p=>{
+    const go = el('button',{class:'btn btn-outline', type:'button'},'Compléter');
+    go.addEventListener('click', ()=>{ close(); showSection(p.section); });
+    ul.appendChild(el('li',{}, el('span',{}, '⚠️ '+p.msg), go));
+  });
+  box.appendChild(ul);
+  const save = el('button',{class:'btn btn-primary', type:'button'},'💾 Enregistrer quand même');
+  save.addEventListener('click', ()=>{ close(); saveRecord(); });
+  const back = el('button',{class:'btn btn-outline', type:'button'},'Revenir à la fiche');
+  back.addEventListener('click', close);
+  box.appendChild(el('div',{style:'display:flex; gap:8px; flex-wrap:wrap;'}, save, back));
+  bg.appendChild(box);
+  bg.addEventListener('click', e=>{ if(e.target===bg) close(); });
+  document.body.appendChild(bg);
 }
 
 function saveRecord(){
@@ -2181,14 +2311,15 @@ function saveRecord(){
   saveDraft();
 
   toast((wasEditing ? 'Fiche mise à jour' : 'Fiche enregistrée') + (localOnlyMode ? ' sur l\'appareil' : ' — synchronisation automatique'));
+  refreshBackupState();
+  rappelSauvegarde();
 }
 
 function newRecord(){
   record = {}; editingId = null;
   localStorage.removeItem('zh_draft');
   renderAll();
-  document.getElementById('gpsChip').classList.remove('live');
-  document.getElementById('gpsText').textContent = 'GPS non localisé';
+  refreshGpsChip();
   toast('Nouvelle fiche vierge');
 }
 
@@ -2217,7 +2348,67 @@ function sortRecords(list, mode){
   return arr;
 }
 
+// Nouvelle fiche pré-remplie à partir d'une fiche existante (zones voisines semblables).
+// On ne reprend pas ce qui est propre à la zone : ID, coordonnées, photos, sondages, remarques.
+const CHAMPS_NON_DUPLIQUES = ['_id','_saved_at','id_num','identifiant','x_l93','y_l93','gps_precision','photos','photos_urls','sondages'];
+function dupliquerFiche(r){
+  if(!confirm('Créer une nouvelle fiche à partir de « '+(r.identifiant||r._id)+' » ?\n\nRepris : observateur, planches, date, délimitation, fonctions, usages, habitats, espèces, préconisations…\nNon repris : ID, coordonnées, photos, sondages, remarques.\n\nLa fiche en cours non enregistrée sera remplacée.')) return;
+  const copie = {};
+  Object.keys(r).forEach(k=>{
+    if(CHAMPS_NON_DUPLIQUES.includes(k) || k.startsWith('remarques')) return;
+    copie[k] = JSON.parse(JSON.stringify(r[k]));
+  });
+  record = copie; editingId = null;
+  saveDraft();
+  renderAll(); closeModal(); refreshGpsChip();
+  toast('Copie créée — saisis l\'ID et localise la nouvelle zone', 3500);
+}
+
+// ---- Sauvegarde : date du dernier export ZIP complet, fiches modifiées depuis
+function getLastBackup(){ try{ return localStorage.getItem('zh_last_backup') || null; }catch(e){ return null; } }
+function fichesNonSauvegardees(){
+  const last = getLastBackup();
+  return getRecords().filter(r=>!last || (r._saved_at||'') > last);
+}
+function depuis(iso){
+  const j = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+  return j<=0 ? 'aujourd\'hui' : j===1 ? 'hier' : 'il y a '+j+' jours';
+}
+function refreshBackupState(){
+  const n = fichesNonSauvegardees().length;
+  const btn = document.getElementById('btnRecords');
+  if(btn) btn.classList.toggle('needs-backup', n>0);
+  const ban = document.getElementById('backupBanner');
+  if(!ban) return;
+  ban.innerHTML = '';
+  const last = getLastBackup();
+  if(!getRecords().length){ ban.className = 'backup-banner'; return; }
+  if(n===0){
+    ban.className = 'backup-banner ok';
+    ban.appendChild(el('span',{}, '✓ Sauvegarde à jour (dernier export complet : '+depuis(last)+')'));
+  } else {
+    ban.className = 'backup-banner warn';
+    ban.appendChild(el('span',{}, '⚠️ '+n+' fiche'+(n>1?'s':'')+' non sauvegardée'+(n>1?'s':'')+' — '+(last ? 'dernier export complet : '+depuis(last) : 'aucun export complet pour l\'instant')+'. Les fiches ne sont que sur cet appareil.'));
+    const b = el('button',{class:'btn btn-primary', type:'button'},'📦 Sauvegarder (ZIP)');
+    b.addEventListener('click', exportPhotosZip);
+    ban.appendChild(b);
+  }
+}
+// Rappel discret, au plus une fois par jour, s'il y a des fiches non sauvegardées depuis plus d'un jour
+function rappelSauvegarde(){
+  const n = fichesNonSauvegardees().length;
+  const last = getLastBackup();
+  if(!n || (last && Date.now()-Date.parse(last) < 86400000)) return;
+  const today = new Date().toISOString().slice(0,10);
+  try{
+    if(localStorage.getItem('zh_backup_reminder') === today) return;
+    localStorage.setItem('zh_backup_reminder', today);
+  }catch(e){}
+  setTimeout(()=>toast('💾 '+n+' fiche'+(n>1?'s':'')+' à sauvegarder : 📋 → « Sauvegarder (ZIP) »', 4500), 2000);
+}
+
 function openRecordsModal(){
+  refreshBackupState();
   document.getElementById('recordsSort').value = getRecordsSort();
   const list = getRecords();
   const box = document.getElementById('recordsList');
@@ -2230,7 +2421,7 @@ function openRecordsModal(){
     row.appendChild(el('div',{}, el('div',{},label), el('div',{class:'rmeta'}, meta+' · '+new Date(r._saved_at).toLocaleString('fr-FR'))));
     const actions = el('div',{style:'display:flex; gap:6px;'});
     const editBtn = el('button',{class:'btn btn-outline', type:'button'},'Ouvrir');
-    editBtn.addEventListener('click', ()=>{ record = Object.assign({}, r); editingId = r._id; renderAll(); closeModal(); if(r.x_l93) document.getElementById('gpsText').textContent = 'X '+r.x_l93+' / Y '+r.y_l93; toast('Fiche chargée'); });
+    editBtn.addEventListener('click', ()=>{ record = Object.assign({}, r); editingId = r._id; renderAll(); closeModal(); refreshGpsChip(); toast('Fiche chargée'); });
     const delBtn = el('button',{class:'btn btn-danger', type:'button'},'Suppr.');
     delBtn.addEventListener('click', ()=>{
       if(confirm('Supprimer cette fiche ?')){
@@ -2246,7 +2437,9 @@ function openRecordsModal(){
         }
       }
     });
-    actions.appendChild(editBtn); actions.appendChild(delBtn);
+    const dupBtn = el('button',{class:'btn btn-outline', type:'button', title:'Nouvelle fiche à partir de celle-ci'},'Dupliquer');
+    dupBtn.addEventListener('click', ()=>dupliquerFiche(r));
+    actions.appendChild(editBtn); actions.appendChild(dupBtn); actions.appendChild(delBtn);
     row.appendChild(actions);
     box.appendChild(row);
   });
@@ -2267,7 +2460,7 @@ function download(filename, content, mime){
 // des exports CSV/GeoJSON (juste les noms, lisibles) et pour construire le ZIP réel des images.
 function photoFileList(r){
   const files = [];
-  const base = (r.identifiant || r._id || 'fiche').replace(/[^a-zA-Z0-9_-]+/g,'_');
+  const base = ((r.identifiant || 'fiche') + '_' + String(r._id||'').slice(-6)).replace(/[^a-zA-Z0-9_-]+/g,'_');
   if(r.photos && typeof r.photos === 'object' && !Array.isArray(r.photos)){
     Object.entries(r.photos).forEach(([category, arr])=>{
       (arr||[]).forEach((photo, idx)=>{
@@ -2337,6 +2530,14 @@ async function exportPhotosZip(){
   toast('Préparation du ZIP…');
   const zip = new JSZip();
   zip.file('fiches.csv', buildCsvContent(list));
+  // Fichier de restauration : les fiches complètes, chaque photo pointant vers son fichier du ZIP
+  const backup = list.map(r=>{
+    const copy = JSON.parse(JSON.stringify(r));
+    const byId = Object.fromEntries(photoFileList(r).filter(f=>f.source==='idb').map(f=>[f.id, f.filename]));
+    Object.values(copy.photos||{}).forEach(arr=>(arr||[]).forEach(ph=>{ if(ph && byId[ph.id]) ph.file = byId[ph.id]; }));
+    return copy;
+  });
+  zip.file('sauvegarde_palustris.json', JSON.stringify({app:'palustris', format:1, exported_at:new Date().toISOString(), records:backup}));
 
   let failed = 0;
   for(const f of allFiles){
@@ -2362,9 +2563,50 @@ async function exportPhotosZip(){
   }
   const blob = await zip.generateAsync({type:'blob'});
   downloadBlob('export_zones_humides_'+Date.now()+'.zip', blob);
+  try{ localStorage.setItem('zh_last_backup', new Date().toISOString()); }catch(e){}
+  refreshBackupState();
   toast(failed
     ? `ZIP téléchargé (fiches.csv + photos) — ${failed} photo(s) indisponible(s) (hors connexion ?)`
     : 'ZIP téléchargé : fiches.csv + '+allFiles.length+' photo(s)');
+}
+
+// Restaure un ZIP « Export complet » : ajoute les fiches absentes de l'appareil et remplace celles
+// dont la version sauvegardée est plus récente ; les photos sont remises dans le stockage local.
+async function restaurerSauvegarde(file){
+  if(!localOnlyMode){ toast('Restauration disponible en mode local uniquement'); return; }
+  if(typeof JSZip === 'undefined'){ toast('Bibliothèque ZIP indisponible (ouvre l\'appli une fois avec du réseau)'); return; }
+  try{
+    const zip = await JSZip.loadAsync(file);
+    const jf = zip.file('sauvegarde_palustris.json');
+    if(!jf){ toast('Ce ZIP ne contient pas de sauvegarde Palustris (export antérieur à la version 15 ?)', 4000); return; }
+    const data = JSON.parse(await jf.async('string'));
+    const recs = Array.isArray(data.records) ? data.records : [];
+    const list = getLocalRecords();
+    let ajout = 0, maj = 0, ignore = 0, photos = 0;
+    for(const r of recs){
+      if(!r || !r._id) continue;
+      const idx = list.findIndex(x=>x._id===r._id);
+      if(idx>-1 && (list[idx]._saved_at||'') >= (r._saved_at||'')){ ignore++; continue; }
+      for(const arr of Object.values(r.photos||{})){
+        for(const ph of (arr||[])){
+          if(ph && ph.file && zip.file(ph.file)){
+            if(!ph.id) ph.id = newPhotoId();
+            await savePhotoBlob(ph.id, await zip.file(ph.file).async('blob'));
+            photos++;
+          }
+          if(ph) delete ph.file;
+        }
+      }
+      if(idx>-1){ list[idx] = r; maj++; } else { list.push(r); ajout++; }
+    }
+    if(!setLocalRecords(list)) return;
+    refreshBackupState();
+    if(document.getElementById('recordsModal').classList.contains('show')) openRecordsModal();
+    toast(`Restauration : ${ajout} fiche(s) ajoutée(s), ${maj} mise(s) à jour, ${ignore} déjà à jour — ${photos} photo(s)`, 5000);
+  }catch(e){
+    console.error('Restauration échouée :', e);
+    toast('Restauration impossible : fichier illisible', 4000);
+  }
 }
 
 function exportGeojson(){
@@ -2401,6 +2643,11 @@ document.getElementById('btnNew').addEventListener('click', ()=>{ if(confirm('Re
 document.getElementById('btnRecords').addEventListener('click', openRecordsModal);
 document.getElementById('btnCloseModal').addEventListener('click', closeModal);
 document.getElementById('btnCloseModalX').addEventListener('click', closeModal);
+document.getElementById('restoreInput').addEventListener('change', e=>{
+  const f = e.target.files[0]; e.target.value = '';
+  if(f && confirm('Restaurer les fiches de « '+f.name+' » ?\nLes fiches absentes seront ajoutées, celles plus récentes dans la sauvegarde seront mises à jour. Rien n\'est supprimé.')) restaurerSauvegarde(f);
+});
+window.addEventListener('resize', ()=>{ const i = SECTIONS.findIndex(s=>s.id===currentSectionId); if(i>-1) moveTabIndicator(i, null, 0, true); });
 // Toucher en dehors de la fenêtre (sur le fond grisé) ferme la liste
 document.getElementById('recordsModal').addEventListener('click', e=>{ if(e.target.id==='recordsModal') closeModal(); });
 document.getElementById('recordsSort').addEventListener('change', e=>{
@@ -2476,6 +2723,7 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
     const w = g.cur.offsetWidth + GAP;
     place(g.cur, g.dx, 0);
     if(g.nb) place(g.nb, g.dx + side*w, 0);
+    if(g.nb) moveTabIndicator(g.i, g.i+side, Math.min(1, Math.abs(g.dx)/w), true);
   }, {passive:false});
   function fin(){
     if(!g || g.dir!=='h'){ g = null; return; }
@@ -2486,6 +2734,7 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
     const D = 240;
     busy = true;
     if(!ok){
+      moveTabIndicator(i, null, 0, false);
       place(cur, 0, D);
       if(nb) place(nb, side*w, D);
       setTimeout(()=>{ reset(cur); if(nb){ reset(nb); nb.classList.remove('swipe-peek'); } busy = false; }, D+20);
@@ -2516,10 +2765,12 @@ initAuthUI();
 loadDraft();
 renderAll();
 updateRecCount();
-if(getVal('x_l93') && getVal('y_l93')){
-  document.getElementById('gpsChip').classList.add('live');
-  document.getElementById('gpsText').textContent = 'X '+getVal('x_l93')+' / Y '+getVal('y_l93');
-}
+refreshGpsChip();
+document.getElementById('gpsChip').addEventListener('click', ()=>{
+  if(getVal('x_l93') && getVal('y_l93')
+     && !confirm('Fiche déjà localisée (X '+getVal('x_l93')+' / Y '+getVal('y_l93')+').\nRemplacer par la position actuelle ?')) return;
+  locate();
+});
 
 // Demande au navigateur de ne jamais effacer automatiquement les données de l'appli (fiches,
 // photos) pour libérer de la place — sans ça, Android/iOS peuvent vider le stockage d'un site.
@@ -2539,6 +2790,8 @@ loadReferentielsFromIDB().then(()=>{
   if(activeId) showSection(activeId);
   autoLoadReferentiels(); // tente ensuite une version plus fraîche en ligne, si disponible
 });
+
+rappelSauvegarde();
 
 migrateAllPhotosToIDB().then(()=>{
   const activeId = currentSectionId;

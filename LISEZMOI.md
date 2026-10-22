@@ -15,6 +15,16 @@
   directement dans QGIS par glisser-déposer) et export **CSV** (import QGIS via
   "Ajouter une couche de texte délimité", ou Excel).
 
+## Sauvegarde et restauration
+
+Les fiches et les photos ne sont stockées que sur l'appareil. Le bouton 📋 de l'en-tête porte un
+point rouge tant que des fiches n'ont pas été sauvegardées, et un rappel s'affiche au plus une fois
+par jour. **Sauvegarder (ZIP)** (ou « Export complet ») télécharge un ZIP contenant `fiches.csv`,
+les photos et `sauvegarde_palustris.json`. **Restaurer une sauvegarde (ZIP)** remet ces fiches et
+leurs photos dans l'appli (sur le même appareil ou un nouveau) : les fiches absentes sont ajoutées,
+celles plus récentes dans la sauvegarde sont mises à jour, rien n'est supprimé. Seuls les ZIP
+produits à partir de la version 15 sont restaurables.
+
 ## Espèces typiques des habitats CORINE
 
 Sous chaque habitat CORINE ajouté, la rubrique « 🌿 Espèces typiques » propose les espèces
