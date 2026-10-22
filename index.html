@@ -145,7 +145,8 @@ nav.tabs button.active{
 main{padding:14px 12px; max-width:760px; margin:0 auto; overflow-x:hidden; overflow-x:clip; position:relative;}
 .section.swipe-peek{pointer-events:none;}
 .section{display:none;}
-.section.active{display:block; animation:fade .15s ease;}
+.section.active{display:block;}
+.section.fade-in{animation:fade .15s ease;} /* changement par onglet ou bouton (pas par glissement) */
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .card{
   background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
@@ -387,7 +388,7 @@ footer.bar .btn{flex:1; justify-content:center;}
       <img class="app-brand-logo" src="palustris-logo.png" alt="Palustris">
       <div class="app-brand-text">
         <h1>Inventaire zones humides — Terrain</h1>
-        <div class="sub">Saisie hors connexion · export GeoJSON / CSV · version 13</div>
+        <div class="sub">Saisie hors connexion · export GeoJSON / CSV · version 14</div>
         <div class="status-row">
           <div class="gps-chip" id="gpsChip"><span class="dot"></span><span id="gpsText">GPS non localisé</span></div>
           <button class="btn btn-outline" id="btnRecords" type="button">📋 Fiches enregistrées (<span id="recCount">0</span>)</button>
@@ -2094,15 +2095,20 @@ function renderAll(){
   });
   showSection(SECTIONS[0].id);
 }
-function showSection(id){
+// opts.swipe : arrivée par glissement — pas de fondu (la page est déjà visible) et la position
+// de défilement est gérée par le geste.
+function showSection(id, opts={}){
   currentSectionId = id;
-  document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active', s.id==='sec_'+id));
+  document.querySelectorAll('.section').forEach(s=>{
+    s.classList.toggle('active', s.id==='sec_'+id);
+    s.classList.toggle('fade-in', s.id==='sec_'+id && !opts.swipe);
+  });
   document.querySelectorAll('nav.tabs button').forEach(b=>{
     b.classList.toggle('active', b.dataset.id===id);
     // garde la rubrique active visible dans la barre (défilement horizontal sur petit écran)
     if(b.dataset.id===id) b.parentElement.scrollTo({left: b.offsetLeft - (b.parentElement.clientWidth - b.offsetWidth)/2, behavior:'smooth'});
   });
-  window.scrollTo({top:0, behavior:'instant'});
+  if(!opts.swipe) window.scrollTo({top:0, behavior:'instant'});
 }
 
 /* ===================== Save / records / export ===================== */
@@ -2430,7 +2436,8 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
     const zoneTop = zone.getBoundingClientRect().top;
     const curTop = cur.getBoundingClientRect().top;
     const top = Math.max(curTop, nav.bottom + 10) - zoneTop;
-    Object.assign(nb.style, {display:'block', position:'absolute', top:top+'px', left:cur.offsetLeft+'px', width:cur.offsetWidth+'px', animation:'none'});
+    nb.classList.remove('fade-in');
+    Object.assign(nb.style, {display:'block', position:'absolute', top:top+'px', left:cur.offsetLeft+'px', width:cur.offsetWidth+'px'});
   }
   zone.addEventListener('touchstart', e=>{
     g = null;
@@ -2490,11 +2497,9 @@ document.getElementById('recordsSort').addEventListener('change', e=>{
       // La voisine devient la rubrique affichée, sans saut : on garde sa position à l'écran.
       const before = nb.getBoundingClientRect().top;
       reset(cur); reset(nb); nb.classList.remove('swipe-peek');
-      nb.style.animation = 'none';
-      showSection(SECTIONS[i+side].id);
+      showSection(SECTIONS[i+side].id, {swipe:true});
       const after = nb.getBoundingClientRect().top;
-      window.scrollTo({top: window.scrollY + (after - before), behavior:'instant'});
-      setTimeout(()=>{ nb.style.animation=''; }, 50);
+      if(Math.abs(after - before) > 0.5) window.scrollTo({top: window.scrollY + (after - before), behavior:'instant'});
       busy = false;
     }, D+20);
   }
