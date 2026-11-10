@@ -526,6 +526,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
   padding:7px 8px 7px 10px; gap:6px; font-size:.86rem;
 }
 .cortege .chk label{flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px;}
+.cortege-count{font-family:var(--f-type); font-weight:700; font-size:.86rem; color:var(--accent); margin:10px 0 6px; display:inline-block; border:2px solid currentColor; border-radius:3px; padding:2px 8px; transform:rotate(-1deg);}
 .cortege .sp{font-family:var(--f-serif); font-style:italic; font-size:1.02rem;}
 .cortege .t{font-family:var(--f-type); font-style:normal; font-size:.68rem; font-weight:700; border:1px solid currentColor; padding:0 4px; border-radius:2px; color:var(--ink-soft);}
 .cortege .t.zh{color:var(--water-light);}
@@ -618,7 +619,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 22</span>
+      <span>Palustris · version 23</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -1385,6 +1386,9 @@ function renderEspecesSearchBlock(container){
   });
 
   container.appendChild(el('div',{class:'hint', style:'margin-top:10px;'},'Touche ★ pour signaler une espèce particulièrement abondante.'));
+  // Nombre d'espèces saisies dans le cortège (mis à jour à chaque ajout / retrait)
+  const nbEsp = selection.length;
+  container.appendChild(el('div',{class:'cortege-count'}, nbEsp ? nbEsp+' espèce'+(nbEsp>1?'s':'')+' saisie'+(nbEsp>1?'s':'') : 'Aucune espèce saisie'));
   const list_container = el('div',{class:'checklist cortege'});
   selection.forEach((entry, idx)=>{
     const entryCat = CATALOGUES[entry.catalogue] || cat; // rétrocompatibilité si l'entrée n'a pas encore de catalogue enregistré
