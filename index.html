@@ -614,10 +614,11 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-water" id="btnExportCsv" type="button">⬇️ Export CSV</button>
       <button class="btn btn-outline" id="btnExportPhotos" type="button">📦 Export complet (CSV + photos, ZIP)</button>
       <label class="btn btn-outline" style="cursor:pointer;">♻️ Restaurer une sauvegarde (ZIP)<input type="file" id="restoreInput" accept=".zip,application/zip" style="display:none;"></label>
+      <label class="btn btn-outline" style="cursor:pointer;">🗺️ Importer une couche GWERN (shape en ZIP)<input type="file" id="gwernInput" accept=".zip,application/zip" style="display:none;"></label>
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 20</span>
+      <span>Palustris · version 21</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -965,6 +966,7 @@ const SAGE_HABITATS = ["Ripisylve","Forêt alluviale (CE et plaines allu.)","For
 
 const PRECONISATIONS = ["Restaurer","Entretenir","Modifier les pratiques","Intervenir en périphérie","Évolution spontanée","Protection","Maintien","Suivi"];
 
+const ZONE_PROSPECTEE = [['','— Sélectionner —'],['1','1 · terrain prévu et fait'],['2','2 · terrain non prévu et fait'],['0','0 · terrain prévu mais non fait'],['-1','-1 · terrain prévu non fait']];
 const GEPPA_CLASSES = ['Ivd','Va','Vb','Vc','Vd','VIc','VId','H','NZH'];
 const TEXTURE_FRACTIONS = ['Sable','Limon','Argile'];
 const TEXTURE_PREFIX = {Sable:'sablo', Argile:'argilo', Limon:'limono'};
@@ -1532,7 +1534,7 @@ function refreshBannerIds(){
 // essentiels : champs qui font passer la rubrique de « commencée » à « remplie »
 // (rubrique sans essentiels : remplie dès qu'un champ est renseigné)
 const SECTIONS = [
-  {id:'ident', title:'1. Identification', build: buildIdent, accent:'#4C7358', essentiels:['observateur_type','id_num','x_l93','y_l93','date_obs']},
+  {id:'ident', title:'1. Identification', build: buildIdent, accent:'#4C7358', essentiels:['observateur_type','id_num','x_l93','y_l93','date_obs','zone_prospectee']},
   {id:'delim', title:'2. Délimitation', build: buildDelim, accent:'#2F6A86', essentiels:['delim_statut','conclusion_zh']},
   {id:'pedologie', title:'3. Pédologie', build: buildPedologie, accent:'#8A5A2B', essentiels:['sondages']},
   {id:'fonctions', title:'4. Fonctions & Atteintes', build: buildFonctions, accent:'#2E6E68', essentiels:[]},
@@ -1997,6 +1999,11 @@ function buildIdent(card){
   card.appendChild(two2);
 
   card.appendChild(inputText('date_obs','Date d\'observation', {type:'date'}));
+  // Statut de prospection (champ zoneprospe de GWERN), à renseigner obligatoirement
+  const zpSel = el('select',{id:'f_zone_prospectee'});
+  ZONE_PROSPECTEE.forEach(([v,l])=>{ const op = el('option',{value:v}, l); if((getVal('zone_prospectee')||'')===v) op.selected = true; zpSel.appendChild(op); });
+  zpSel.addEventListener('change', ()=>setVal('zone_prospectee', zpSel.value));
+  card.appendChild(fieldWrap('Zone prospectée', null, zpSel));
   card.appendChild(pillRadio('type_obs','Type d\'observation', ['in situ','ex situ','inaccessible']));
 
   buildPhotos(card);
@@ -2635,6 +2642,7 @@ function verifierFiche(){
   if(!v('id_num')) pb.push({msg:'Pas d\'ID de fiche', section:'ident'});
   if(!v('x_l93') || !v('y_l93')) pb.push({msg:'Pas de coordonnées GPS', section:'ident'});
   if(!v('date_obs')) pb.push({msg:'Pas de date d\'observation', section:'ident'});
+  if(!v('zone_prospectee')) pb.push({msg:'Zone prospectée non renseignée', section:'ident'});
   if(!v('conclusion_zh')) pb.push({msg:'Pas de conclusion « zone humide »', section:'delim'});
   const hab = record.corine_habitats || [];
   if(!hab.length) pb.push({msg:'Aucun habitat CORINE', section:'especes'});
@@ -2904,6 +2912,7 @@ function sanitizeRecordForTabularExport(r){
   const clean = Object.assign({}, r);
   delete clean.photos;
   delete clean.photos_urls;
+  delete clean.geom_l93; // contour du polygone importé : conservé dans la fiche (carte), pas dans le tableau
   clean.photos_fichiers = files.map(f=>f.filename).join(' | ');
   const legendes = [];
   Object.entries((r.photos && typeof r.photos==='object' && !Array.isArray(r.photos)) ? r.photos : {}).forEach(([cat, arr])=>{
@@ -3032,6 +3041,327 @@ async function restaurerSauvegarde(file){
   }
 }
 
+/* ===================== Import d'une couche GWERN (shapefile zippé) =====================
+   Lit un export GwernQGIS (Forum des Marais Atlantiques) : .shp (polygones), .dbf (attributs),
+   .prj (doit être en Lambert-93), .cpg (encodage). Chaque entité devient une fiche complète.
+   Codes traduits d'après les tables du projet GwernQGIS (dossier tables/). Notation des listes :
+   code(niveau)[permanence], niveau 1/2/3 = principal/secondaire/complémentaire ou fort/moyen/faible. */
+const GW = {
+  delim: {3:'Veg', 4:'Pedo', 5:'Topo', 6:'Hydro (eau)', 7:'Amenagt hum'},
+  eau: {0:'Inconnu', 2:'Autre', 3:'Autre', 4:"Cours d'eau", 5:'Canaux & fossés', 6:'Source', 7:'Nappe', 8:"Plan d'eau", 9:'Ruissellement', 10:'Crue', 11:'Pompage', 12:'Précipitations', 13:'Évaporation'},
+  fh: {3:'Régule crue', 7:'Protection érosion, ruissellement', 8:'Stockage eau, recharge nappes, soutien étiage'},
+  fe: {3:'Interception matières en susp. et toxiques', 4:'Régulation nutriments'},
+  fb: {2:'Autre', 3:'Corridor écologique', 4:'Accueil faune', 7:'Support biodiversité', 8:'Stockage CO2'},
+  activite: {2:'Autres', 3:"Pas d'activité marquante", 6:'Sylviculture', 8:'Aquaculture', 10:'Pêche', 11:'Chasse', 12:'Navigation', 13:'Tourisme / Loisirs', 14:'Urbanisation', 15:'Infrastructure linéaire', 16:'Aéroport', 17:'Port', 18:'Extractions matériaux', 19:'Hydroélectricité / Barrage', 20:'Militaire', 21:'Gestion conservatoire', 22:"Prélèvement d'eau", 401:'Fauchage', 402:'Pâturage', 403:'Culture'},
+  valeco: {2:'Autre', 4:'Stockage eau potable', 5:'Production biologique', 6:'Production agricole et sylvicole', 7:'Production matière première', 8:'Valorisation pédagogique', 9:'Paysage / patrimoine culturel / identité locale', 10:'Loisirs, récréatif', 11:'Scientifique', 14:'Tourisme'},
+  atteinte: {2:'Autre', 3:'Assèchement, drainage', 4:'Atterrissement', 5:"Création plan d'eau", 6:'Décharge', 7:'Enfrichement', 8:'Fertilisation', 9:"Modif. cours d'eau, canalisation", 10:'Espèces invasives', 11:'Remblais', 12:'Suppr. haies, boisements', 14:'Surfréquentation', 15:'Urbanisation', 16:'Eutrophisation', 17:'Populiculture/enrésinement', 18:'Surpâturage', 19:'Mise en culture', 20:'Extraction de matériaux', 21:'Rejet polluant'},
+  menace: {2:'Autres', 3:'Aggravation atteintes', 4:'Projet prévu', 5:'Activité à risque à proximité'},
+  foncmaj: {3:'Biologique', 4:'Hydraulique', 5:'Épuratrice'},
+  valmaj: {3:'Économique', 4:'Culturelle / paysagère', 5:'Sociale, récréative'},
+  precon: {3:'Restaurer', 4:'Entretenir', 5:'Suivi', 6:'Maintien', 7:'Évolution spontanée', 8:'Intervenir en périphérie', 9:'Protection', 10:'Modifier les pratiques'},
+  sage: {18:'Ripisylve', 19:'Forêt alluviale (CE et plaines allu.)', 20:'Prairie inondable (CE et plaines allu.)', 21:'Roselière, cariçaie (CE et plaines allu.)', 22:'Végétation aquatique (CE et plaine allu.)',
+         24:'Forêt inondable (régime étangs)', 25:'Prairie inondable (régime étangs)', 26:'Roselière, cariçaie (régime étangs)', 27:'Végétation aquatique (régime étangs)',
+         28:'Forêt inondable (régime étangs)', 29:'Prairie inondable (régime étangs)', 30:'Roselière, cariçaie (régime étangs)', 40:'Peupleraie'},
+  geppa: {31:'Ivd', 32:'Va', 33:'Vb', 34:'Vc', 35:'Vd', 41:'VIc', 42:'VId', 5:'H'},
+  niveau3: {1:'+', 2:'+/-', 3:'-'},                      // fort / moyen / faible
+  niveauAct: {1:'princ', 2:'2nd', 3:'cplt'},              // principal / secondaire / complémentaire
+  qualite: {'Bonne':'+', 'Moyenne':'+/-', 'Mauvaise':'-', 'Fort':'+', 'Moyen':'+/-', 'Faible':'-'},
+  diagHydro: {"Proche de l'équilibre naturel":'+', 'Sensiblement dégradé':'+/-', 'Dégradé':'-', 'Très dégradé':'--'},
+  etatCons: {'Habitat non dégradé':'+', 'Habitat partiellement dégradé':'+/-', 'Habitat dégradé à fortement dégradé':'-'}
+};
+function gwListe(v){
+  const out = [];
+  String(v||'').replace(/(-?\d+)(?:\((\d)\))?(?:\[(\d+)\])?/g, (m, code, niv, perm)=>{ out.push({code:+code, niv: niv ? +niv : null, perm: perm!=null ? +perm : null}); return m; });
+  return out;
+}
+
+// ---- lecture du shapefile
+function lireDbf(buf, encodage){
+  const dv = new DataView(buf), n = dv.getUint32(4, true), hlen = dv.getUint16(8, true), rlen = dv.getUint16(10, true);
+  const dec = new TextDecoder(encodage);
+  const champs = [];
+  for(let o = 32; dv.getUint8(o) !== 0x0D; o += 32){
+    champs.push({nom: dec.decode(new Uint8Array(buf, o, 11)).replace(/\0.*$/,''), type: String.fromCharCode(dv.getUint8(o+11)), lg: dv.getUint8(o+16)});
+  }
+  const lignes = [];
+  for(let i = 0; i < n; i++){
+    const o = hlen + i*rlen;
+    if(dv.getUint8(o) === 0x2A){ lignes.push(null); continue; } // enregistrement supprimé
+    let p = o + 1; const r = {};
+    champs.forEach(c=>{
+      let v = dec.decode(new Uint8Array(buf, p, c.lg)).trim(); p += c.lg;
+      if((c.type==='N' || c.type==='F') && /^\**$/.test(v)) v = '';
+      r[c.nom] = v;
+    });
+    lignes.push(r);
+  }
+  return lignes;
+}
+function lireShp(buf){
+  const dv = new DataView(buf), geoms = [];
+  let o = 100;
+  while(o < buf.byteLength){
+    const lgContenu = dv.getInt32(o+4, false)*2, type = dv.getInt32(o+8, true);
+    if(type===5 || type===15 || type===25){
+      const nParts = dv.getInt32(o+44, true), nPts = dv.getInt32(o+48, true);
+      const parts = []; for(let i=0;i<nParts;i++) parts.push(dv.getInt32(o+52+i*4, true));
+      const base = o+52+nParts*4, anneaux = [];
+      for(let i=0;i<nParts;i++){
+        const fin = i<nParts-1 ? parts[i+1] : nPts, ring = [];
+        for(let k=parts[i]; k<fin; k++) ring.push([Math.round(dv.getFloat64(base+k*16, true)*100)/100, Math.round(dv.getFloat64(base+k*16+8, true)*100)/100]);
+        anneaux.push(ring);
+      }
+      geoms.push(anneaux);
+    } else geoms.push(null);
+    o += 8 + lgContenu;
+  }
+  return geoms;
+}
+function airePolygone(r){ let a=0; for(let i=0,j=r.length-1;i<r.length;j=i++) a += (r[j][0]+r[i][0])*(r[j][1]-r[i][1]); return a/2; }
+function dansAnneaux(x, y, anneaux){
+  let dedans = false;
+  anneaux.forEach(r=>{ for(let i=0,j=r.length-1;i<r.length;j=i++){
+    if(((r[i][1]>y)!==(r[j][1]>y)) && x < (r[j][0]-r[i][0])*(y-r[i][1])/(r[j][1]-r[i][1]) + r[i][0]) dedans = !dedans;
+  }});
+  return dedans;
+}
+// Point garanti à l'intérieur du polygone : centre de gravité s'il tombe dedans, sinon milieu du plus
+// long segment intérieur sur l'horizontale qui passe par ce centre.
+function pointInterieur(anneaux){
+  const ext = anneaux.reduce((a,b)=> Math.abs(airePolygone(b)) > Math.abs(airePolygone(a)) ? b : a);
+  let cx=0, cy=0, A=0;
+  for(let i=0,j=ext.length-1;i<ext.length;j=i++){ const f = ext[j][0]*ext[i][1]-ext[i][0]*ext[j][1]; cx += (ext[j][0]+ext[i][0])*f; cy += (ext[j][1]+ext[i][1])*f; A += f; }
+  if(A){ cx /= 3*A; cy /= 3*A; }
+  if(A && dansAnneaux(cx, cy, anneaux)) return [cx, cy];
+  const xs = [];
+  anneaux.forEach(r=>{ for(let i=0,j=r.length-1;i<r.length;j=i++){
+    if((r[i][1]>cy)!==(r[j][1]>cy)) xs.push((r[j][0]-r[i][0])*(cy-r[i][1])/(r[j][1]-r[i][1]) + r[i][0]);
+  }});
+  xs.sort((a,b)=>a-b);
+  let best = null;
+  for(let k=0;k+1<xs.length;k+=2) if(!best || xs[k+1]-xs[k] > best[1]-best[0]) best = [xs[k], xs[k+1]];
+  return best ? [(best[0]+best[1])/2, cy] : ext[0];
+}
+
+// ---- espèces : code TAXREF → entrée du catalogue Alsace-Lorraine
+let gwernEspeces = null;
+async function chargerGwernEspeces(){
+  if(gwernEspeces) return gwernEspeces;
+  try{ const res = await fetch('gwern_especes.json'); gwernEspeces = await res.json(); }
+  catch(e){ gwernEspeces = {especes:{}, synonymes:{}}; }
+  return gwernEspeces;
+}
+function trouverEspeceGwern(code, ref){
+  const cat = getFloreReferentiel('alslor');
+  const parCode = cat.find(r=>String(r.cdref16)===code);
+  if(parCode) return {entry: parCode};
+  const nom = (ref.especes||{})[code];
+  if(!nom) return {manquant: 'code '+code};
+  const essais = [nom, (ref.synonymes||{})[nom], nom.split(' ').slice(0,2).join(' '), (ref.synonymes||{})[nom.split(' ').slice(0,2).join(' ')]].filter(Boolean);
+  for(const n of essais){ const e = cat.find(r=>r['Taxon valide court']===n); if(e) return {entry: e, note: n!==nom ? nom+' → '+n : null}; }
+  return {manquant: nom};
+}
+
+// ---- une entité GWERN → une fiche Palustris
+function ficheDepuisGwern(a, anneaux, ref, nomFichier){
+  const r = {};
+  const ajouterRq = (cle, txt)=>{ if(txt) r[cle] = r[cle] ? r[cle]+'\n'+txt : txt; };
+  const id = (a.id || a.Nom_zone || '').trim();
+  const m = id.match(/^([A-Za-z]+\d+)-(.+)$/);
+  r.planche_reference = m ? m[1] : '';
+  r.id_num = m ? m[2] : id;
+  r.identifiant = id;
+  const planches = [...new Set(((a.Nom_zone||id).match(/[A-Za-z]+\d+(?=-)/g)||[]))];
+  r.planches_concernees = planches.join(' ; ');
+  const d = (a.datCreatio||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(d) r.date_obs = d[3]+'-'+d[2]+'-'+d[1];
+  const obs = a.observateu || '';
+  if(/margueray/i.test(obs) && /signoret/i.test(obs)) r.observateur_type = 'ST + MM';
+  else if(/margueray/i.test(obs)) r.observateur_type = 'MM';
+  else if(/signoret/i.test(obs)) r.observateur_type = 'ST';
+  else if(obs){ r.observateur_type = 'Autre'; r.observateur_autre = obs; }
+  if(anneaux){
+    const pt = pointInterieur(anneaux);
+    r.x_l93 = pt[0].toFixed(2); r.y_l93 = pt[1].toFixed(2);
+    r.geom_l93 = anneaux;
+  }
+  if(a.zoneprospe!=='' && a.zoneprospe!=null) r.zone_prospectee = String(parseInt(a.zoneprospe,10));
+  ajouterRq('remarques_ident', a.rqGene);
+  ajouterRq('remarques_ident', [a.Prospectio ? 'Prospection : '+a.Prospectio : '', a.Verif_2026 ? 'À vérifier en 2026' : '', a.Remarque].filter(Boolean).join(' · '));
+
+  // Délimitation
+  r.delim_princ = [...new Set(gwListe(a.critDelim).map(x=>GW.delim[x.code]).filter(Boolean))];
+  if(/^ZH$/i.test(a.Ccl_ZH||'')) r.conclusion_zh = 'oui';
+  else if(/non/i.test(a.Ccl_ZH||'')) r.conclusion_zh = 'non';
+  const freq = ['Inconnu','Jamais','Toujours','Régulièrement','Exceptionnellement'].find(o=>o.toLowerCase()===(a.freqSubm||'').toLowerCase());
+  if(freq) r.freq_submersion = freq;
+  const etend = ['Inconnu','Sans objet','Totalement','Partiellement'].find(o=>o.toLowerCase()===(a.etendSubm||'').toLowerCase());
+  if(etend) r.etendue_submersion = etend;
+
+  // Pédologie (si la couche en contient)
+  const geppa = GW.geppa[parseInt(a.hydromSol,10)];
+  if(geppa || a.hydromApp || a.hydromDisp){
+    r.sondages = [{id:'sd_gw_'+Date.now()+Math.random().toString(36).slice(2,6), classe_geppa: geppa||'', redoxique_apparition: a.hydromApp||'', redoxique_disparition: a.hydromDisp||''}];
+  }
+
+  // Fonctions & atteintes
+  gwListe(a.entreeEau).forEach(x=>{ if(GW.eau[x.code]) r['alim_'+slug(GW.eau[x.code])] = true; });
+  gwListe(a.sortieEau).forEach(x=>{ if(GW.eau[x.code]) r['sortie_'+slug(GW.eau[x.code])] = true; });
+  [['foncHydro','fh'],['foncEpur','fe'],['foncBio','fb']].forEach(([champ, cle])=>{
+    gwListe(a[champ]).forEach(x=>{ const it = GW[cle][x.code]; if(it && x.niv) r[cle+'_'+slug(it)] = GW.niveau3[x.niv]; });
+  });
+  if(GW.diagHydro[a.diagHydro]) r['eh_'+slug('Équilibre naturel')] = GW.diagHydro[a.diagHydro];
+  if(GW.etatCons[a.etatCons]) r['etat_habitat_'+slug('Conservation')] = GW.etatCons[a.etatCons];
+  gwListe(a.atteinte).forEach(x=>{ const it = GW.atteinte[x.code]; if(it && x.niv) r['atteinte_'+slug(it)] = GW.niveau3[x.niv]; });
+  const nivMenace = GW.qualite[a.nivMenace] || 'Nd'; // niveau inconnu ou absent → Nd
+  gwListe(a.menace).forEach(x=>{ const it = GW.menace[x.code]; if(it) r['menace_'+slug(it)] = nivMenace; });
+  gwListe(a.foncMaj).forEach(x=>{ const it = GW.foncmaj[x.code]; if(it) r['fonction_'+slug(it)] = '+'; });
+  gwListe(a.valMaj).forEach(x=>{ const it = GW.valmaj[x.code]; if(it) r['valmaj_'+slug(it)] = '+'; });
+  ajouterRq('remarques_fonctions', a.rqHydro);
+  ajouterRq('remarques_fonctions', a.rqBilan);
+
+  // Usages
+  [['actDans','dans'],['actAutour','autour']].forEach(([champ, ou])=>{
+    gwListe(a[champ]).forEach(x=>{ const it = GW.activite[x.code]; if(it) r['activite_'+ou+'_'+slug(it)] = GW.niveauAct[x.niv] || 'princ'; });
+  });
+  gwListe(a.valSocEco).forEach(x=>{ const it = GW.valeco[x.code]; if(it && x.niv) r['valeco_'+slug(it)] = GW.niveau3[x.niv]; });
+  ajouterRq('remarques_usages', a.rqContexte);
+
+  // Espèces & habitats
+  const corRef = getCorineReferentiel();
+  r.corine_habitats = [];
+  [a.corBio1, a.corBio2].forEach(v=>String(v||'').split(';').forEach(t=>{
+    const mm = t.trim().match(/^([\d.]+)\s*(?:\[(\d+)\s*%\])?/);
+    if(!mm || r.corine_habitats.some(h=>h.code===mm[1])) return;
+    const lib = (corRef.find(c=>c.code===mm[1])||{}).libelle || '';
+    r.corine_habitats.push({code: mm[1], libelle: lib, recouvrement: mm[2]!=null ? Number(mm[2]) : ''});
+  }));
+  // Palustris garde un seul type SAGE : le premier ; les suivants vont en remarque
+  const sages = gwListe(a.SAGE).map(x=>GW.sage[x.code] || 'code SAGE GWERN '+x.code);
+  if(sages.length && GW.sage[gwListe(a.SAGE)[0].code]) r.sage_habitat_type = sages[0];
+  if(sages.length > 1) ajouterRq('remarques_especes', 'Type(s) SAGE secondaire(s) : '+sages.slice(1).join(', '));
+  r.especes_selection = [];
+  const notesEsp = [];
+  String(a.espVegetal||'').split(';').map(x=>x.trim()).filter(Boolean).forEach(code=>{
+    const t = trouverEspeceGwern(code, ref);
+    if(t.entry){
+      if(!r.especes_selection.some(e=>e.cdref16===t.entry.cdref16)) r.especes_selection.push(Object.assign({}, t.entry, {abondante:false, catalogue:'alslor'}));
+      if(t.note) notesEsp.push(t.note);
+    } else notesEsp.push('non trouvée dans le catalogue : '+t.manquant);
+  });
+  ajouterRq('remarques_especes', a.rqBio);
+  ajouterRq('remarques_especes', a.rqTypo);
+  if(notesEsp.length) ajouterRq('remarques_especes', 'Import GWERN — '+notesEsp.join(' ; '));
+
+  // Préconisations
+  r.preconisations = [...new Set(gwListe(a.preconAct).map(x=>GW.precon[x.code]).filter(Boolean))];
+  if(gwListe(a.preconAct).some(x=>x.code===2)) ajouterRq('remarques_preconisations', 'Préconisation GWERN : Autres');
+  if(GW.qualite[a.faisabInt]) r.faisabilite = GW.qualite[a.faisabInt];
+  if(GW.qualite[a.nivPrior]) r.priorite = GW.qualite[a.nivPrior];
+  r.zonages = [a.propoZHIEP==='1' ? 'ZHIEP' : '', a.propoZSGE==='1' ? 'ZSGE' : ''].filter(Boolean);
+  ajouterRq('remarques_preconisations', a.recomTech);
+
+  r._id = 'zh_gwern_' + id.replace(/[^A-Za-z0-9+_-]+/g,'_');
+  r._saved_at = new Date().toISOString();
+  r.import_source = 'GWERN · ' + nomFichier;
+  r.gwern_attributs = JSON.stringify(a); // attributs d'origine, conservés tels quels
+  return r;
+}
+
+// Champs comparés pour décider si deux fiches sont « identiques »
+const CHAMPS_HORS_COMPARAISON = ['_id','_saved_at','import_source','gwern_attributs','photos','photos_urls'];
+function differencesFiches(a, b){
+  const cles = new Set([...Object.keys(a), ...Object.keys(b)].filter(k=>!CHAMPS_HORS_COMPARAISON.includes(k)));
+  const norm = v => v==null || v==='' || (Array.isArray(v) && !v.length) || v===false ? '' : JSON.stringify(v);
+  return [...cles].filter(k=>norm(a[k])!==norm(b[k]));
+}
+
+async function importerGwern(file){
+  if(!localOnlyMode){ toast('Import disponible en mode local uniquement'); return; }
+  if(typeof JSZip === 'undefined'){ toast('Bibliothèque ZIP indisponible (ouvre l\'appli une fois avec du réseau)', 4000); return; }
+  try{
+    toast('Lecture de la couche…');
+    const zip = await JSZip.loadAsync(file);
+    const trouver = ext => Object.values(zip.files).find(f=>!f.dir && f.name.toLowerCase().endsWith(ext) && !/__macosx/i.test(f.name));
+    const fShp = trouver('.shp'), fDbf = trouver('.dbf'), fPrj = trouver('.prj'), fCpg = trouver('.cpg');
+    if(!fShp || !fDbf){ toast('Le ZIP doit contenir au moins le .shp et le .dbf de la couche', 4500); return; }
+    const prj = fPrj ? await fPrj.async('string') : '';
+    if(prj && !/lambert[_ ]?93|2154|lamb93/i.test(prj) && !/700000/.test(prj)){ toast('Projection non reconnue : la couche doit être en Lambert-93 (EPSG:2154)', 5000); return; }
+    const cpg = fCpg ? (await fCpg.async('string')).trim() : '';
+    const encodage = /utf-?8/i.test(cpg) || !cpg ? 'utf-8' : (/1252|latin/i.test(cpg) ? 'windows-1252' : 'utf-8');
+    const attributs = lireDbf(await fDbf.async('arraybuffer'), encodage);
+    const geoms = lireShp(await fShp.async('arraybuffer'));
+    const ref = await chargerGwernEspeces();
+
+    const fiches = [];
+    attributs.forEach((a,i)=>{ if(a) fiches.push(ficheDepuisGwern(a, geoms[i], ref, file.name)); });
+
+    // Doublons dans la couche elle-même
+    const parId = {};
+    fiches.forEach(f=>{ (parId[f.identifiant] = parId[f.identifiant] || []).push(f); });
+    const rapport = {ajoutees:[], identiques:[], conflitsCouche:[], conflitsAppli:[], sansId:[]};
+    const aImporter = [];
+    Object.entries(parId).forEach(([id, liste])=>{
+      if(!id){ rapport.sansId.push(...liste); return; }
+      if(liste.length > 1){
+        const diff = differencesFiches(liste[0], liste[1]);
+        if(diff.length){ rapport.conflitsCouche.push({id, n: liste.length, diff}); return; }
+      }
+      aImporter.push(liste[0]);
+    });
+
+    // Comparaison avec les fiches déjà dans Palustris (même identifiant)
+    const existantes = getLocalRecords();
+    const nouvelles = [];
+    aImporter.forEach(f=>{
+      const ex = existantes.find(e=>(e.identifiant||'').trim()===f.identifiant);
+      if(!ex){ nouvelles.push(f); rapport.ajoutees.push(f.identifiant); return; }
+      const diff = differencesFiches(ex, f);
+      if(diff.length) rapport.conflitsAppli.push({id: f.identifiant, diff});
+      else rapport.identiques.push(f.identifiant);
+    });
+    if(nouvelles.length && !setLocalRecords(existantes.concat(nouvelles))) return;
+    refreshBackupState();
+    afficherRapportImport(rapport, file.name);
+    if(document.getElementById('recordsModal').classList.contains('show')) openRecordsModal();
+  }catch(e){
+    console.error('Import GWERN échoué :', e);
+    toast('Import impossible : fichier illisible ('+e.message+')', 5000);
+  }
+}
+
+// Libellés lisibles des champs, pour expliquer les différences
+function libelleChamp(k){
+  const L = {planche_reference:'planche', id_num:'ID', planches_concernees:'planches concernées', date_obs:'date', observateur_type:'observateur',
+    x_l93:'X', y_l93:'Y', geom_l93:'contour', zone_prospectee:'zone prospectée', delim_princ:'critères de délimitation', conclusion_zh:'conclusion ZH',
+    freq_submersion:'fréquence de submersion', etendue_submersion:'étendue de submersion', corine_habitats:'habitats CORINE', sage_habitat_type:'type SAGE',
+    especes_selection:'cortège floristique', preconisations:'préconisations', faisabilite:'faisabilité', priorite:'priorité', zonages:'zonages', sondages:'sondages'};
+  if(L[k]) return L[k];
+  if(k.startsWith('remarques_')) return 'remarques ('+k.slice(10)+')';
+  return k.replace(/_/g,' ');
+}
+function afficherRapportImport(rp, nom){
+  let bg = document.getElementById('importModal'); if(bg) bg.remove();
+  bg = el('div',{class:'modal-bg show', id:'importModal'});
+  const box = el('div',{class:'modal'});
+  const close = ()=>bg.remove();
+  const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕'); x.addEventListener('click', close);
+  box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Import GWERN'), x));
+  box.appendChild(el('p',{class:'hint'}, nom));
+  const ul = el('ul',{class:'check-list'});
+  ul.appendChild(el('li',{}, el('span',{}, '✓ '+rp.ajoutees.length+' fiche(s) ajoutée(s)')));
+  if(rp.identiques.length) ul.appendChild(el('li',{}, el('span',{}, '= '+rp.identiques.length+' déjà présente(s) et identique(s), non réimportée(s) : '+rp.identiques.join(', '))));
+  rp.conflitsAppli.forEach(c=>ul.appendChild(el('li',{}, el('span',{}, '⚠️ '+c.id+' existe déjà dans Palustris avec des différences ('+c.diff.map(libelleChamp).join(', ')+') — non importée, fiche existante conservée'))));
+  rp.conflitsCouche.forEach(c=>ul.appendChild(el('li',{}, el('span',{}, '⚠️ '+c.id+' apparaît '+c.n+' fois dans la couche avec des contenus différents ('+c.diff.map(libelleChamp).join(', ')+') — non importée'))));
+  if(rp.sansId.length) ul.appendChild(el('li',{}, el('span',{}, '⚠️ '+rp.sansId.length+' entité(s) sans identifiant — non importée(s)')));
+  box.appendChild(ul);
+  const ok = el('button',{class:'btn btn-primary', type:'button'},'Fermer'); ok.addEventListener('click', close);
+  box.appendChild(ok);
+  bg.appendChild(box);
+  bg.addEventListener('click', e=>{ if(e.target===bg) close(); });
+  document.body.appendChild(bg);
+}
+
 function exportGeojson(){
   const list = getRecords();
   const features = list.map(r=>{
@@ -3072,6 +3402,10 @@ document.getElementById('btnRecordsBottom').addEventListener('click', ()=>{
 });
 document.getElementById('btnRecordsTop').addEventListener('click', ()=>{
   document.querySelector('#recordsModal .modal').scrollTo({top:0, behavior:'smooth'});
+});
+document.getElementById('gwernInput').addEventListener('change', e=>{
+  const f = e.target.files[0]; e.target.value = '';
+  if(f) importerGwern(f);
 });
 document.getElementById('restoreInput').addEventListener('change', e=>{
   const f = e.target.files[0]; e.target.value = '';

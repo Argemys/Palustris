@@ -25,6 +25,17 @@ leurs photos dans l'appli (sur le même appareil ou un nouveau) : les fiches abs
 celles plus récentes dans la sauvegarde sont mises à jour, rien n'est supprimé. Seuls les ZIP
 produits à partir de la version 15 sont restaurables.
 
+## Import d'une couche GWERN
+
+Liste des fiches → **Importer une couche GWERN (shape en ZIP)** : le ZIP doit contenir le `.shp`, le
+`.dbf`, le `.prj` (Lambert-93) et si possible le `.cpg` d'un export GwernQGIS. Chaque polygone devient
+une fiche complète : coordonnées = point garanti à l'intérieur du polygone (le contour est conservé
+pour la future carte), listes codées traduites d'après les tables du projet GwernQGIS (Forum des
+Marais Atlantiques), espèces rattachées au catalogue Alsace-Lorraine par leur code TAXREF
+(`gwern_especes.json` sert de secours par le nom). Les attributs d'origine restent dans la colonne
+`gwern_attributs` des exports. Une fiche dont l'identifiant existe déjà n'est jamais écrasée : le
+rapport d'import indique si elle est identique ou en quoi elle diffère.
+
 ## Espèces typiques des habitats CORINE
 
 Sous chaque habitat CORINE ajouté, la rubrique « 🌿 Espèces typiques » propose les espèces
