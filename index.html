@@ -619,7 +619,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 24</span>
+      <span>Palustris · version 25</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -3028,6 +3028,7 @@ async function restaurerSauvegarde(file){
       }
       if(idx>-1){ list[idx] = r; maj++; } else { list.push(r); ajout++; }
     }
+    list.forEach(nettoyerFicheGwern);
     if(!setLocalRecords(list)) return;
     refreshBackupState();
     if(document.getElementById('recordsModal').classList.contains('show')) openRecordsModal();
@@ -3558,6 +3559,29 @@ loadReferentielsFromIDB().then(()=>{
 });
 
 rappelSauvegarde();
+
+// Nettoyage des fiches importées de GWERN avant la version 24 : retire le champ « zone prospectée »
+// et, dans les remarques d'Identification, les mentions « Prospection : … » et « À vérifier en 2026 »
+// (la remarque GWERN éventuelle sur la même ligne est conservée). Sans effet sur une fiche déjà propre,
+// ce qui permet de le relancer à chaque démarrage (et après une restauration d'ancienne sauvegarde).
+function nettoyerFicheGwern(r){
+  let modif = false;
+  if('zone_prospectee' in r){ delete r.zone_prospectee; modif = true; }
+  if(String(r.import_source||'').startsWith('GWERN') && r.remarques_ident){
+    const propre = r.remarques_ident.split('\n').map(ligne=>ligne.split(' · ')
+      .filter(p=>!/^Prospection : /.test(p) && p!=='À vérifier en 2026').join(' · ')).filter(l=>l.trim()!=='').join('\n');
+    if(propre !== r.remarques_ident){ r.remarques_ident = propre; modif = true; }
+  }
+  return modif;
+}
+function nettoyerFichesGwern(){
+  if(!localOnlyMode) return;
+  const list = getLocalRecords();
+  const n = list.filter(nettoyerFicheGwern).length;
+  if(n && setLocalRecords(list)) toast('🧹 '+n+' fiche(s) GWERN nettoyée(s) (prospection retirée)', 3500);
+  if(nettoyerFicheGwern(record)){ saveDraft(); const id = currentSectionId; renderAll(); if(id) showSection(id); }
+}
+nettoyerFichesGwern();
 
 // Courbes de niveau en filigrane dans l'en-tête (dessinées, pas d'image à charger)
 function drawContours(){
