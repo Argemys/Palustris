@@ -236,6 +236,9 @@ textarea{min-height:70px; resize:vertical;}
 .activity-table td{padding:4px 2px; border-bottom:1px solid var(--line); vertical-align:middle;}
 .activity-table td.lbl{font-size:.75rem; text-align:left;}
 .activity-table select{padding:3px 2px; font-size:.68rem;}
+.retour-controle{position:fixed; left:50%; transform:translateX(-50%); bottom:132px; z-index:60; display:flex; gap:6px; box-shadow:0 6px 16px rgba(0,0,0,.25); border-radius:10px;}
+.retour-controle[hidden]{display:none;}
+.retour-controle .btn{padding:10px 12px; font-size:.85rem; white-space:nowrap;}
 footer.bar{
   position:fixed; bottom:0; left:0; right:0; background:var(--paper);
   border-top:1px solid var(--line); padding:10px 12px; display:flex; gap:8px;
@@ -593,6 +596,10 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
 </footer>
 
 <div class="toast" id="toast"></div>
+<div class="retour-controle" id="retourControle" hidden>
+  <button class="btn btn-primary" id="btnRetourControle" type="button">💾 ↩ Enregistrer et revenir au contrôle</button>
+  <button class="btn btn-outline" id="btnRetourControleX" type="button" aria-label="Masquer" title="Masquer">✕</button>
+</div>
 
 <div class="modal-bg" id="recordsModal">
   <div class="modal">
@@ -622,7 +629,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 29</span>
+      <span>Palustris · version 30</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -2680,7 +2687,7 @@ function verifierFiche(rec = record){
   const pb = [];
   const v = k => valeurRenseignee(rec[k]);
   if(!v('id_num')) pb.push({msg:'Pas d\'ID de fiche', section:'ident'});
-  if(!v('x_l93') || !v('y_l93')) pb.push({msg:'Pas de coordonnées GPS', section:'ident'});
+  if(!v('x_l93') || !v('y_l93')) pb.push({msg:'Pas de coordonnées GPS', section:'ident', code:'gps'});
   if(!v('date_obs')) pb.push({msg:'Pas de date d\'observation', section:'ident'});
   if(!v('conclusion_zh')) pb.push({msg:'Pas de conclusion « zone humide »', section:'delim'});
   const hab = rec.corine_habitats || [];
@@ -2779,6 +2786,7 @@ function saveRecord(){
 }
 
 function newRecord(){
+  document.getElementById('retourControle').hidden = true;
   record = {}; editingId = null;
   localStorage.removeItem('zh_draft');
   renderAll();
@@ -3484,6 +3492,46 @@ function invasivesCiteesEnRemarque(rec){
   return especesCiteesEnRemarque(rec).filter(x=>statutEEE(Object.assign({}, x.entry, {catalogue:'alslor'}))).map(x=>x.entry);
 }
 
+// Fiches avec une espèce invasive au cortège mais sans l'atteinte : aperçu, niveau d'impact au choix
+// pour chaque fiche (faible par défaut), puis l'atteinte est renseignée sur les fiches cochées.
+function apercuCocherAtteinteEEE(){
+  const plan = getLocalRecords().map(r=>({r, c: controleEEE(r)})).filter(x=>x.c.pb.some(p=>p.section==='fonctions'))
+    .sort((a,b)=>String(a.r.identifiant||'').localeCompare(String(b.r.identifiant||''), 'fr', {numeric:true}));
+  let bg = document.getElementById('atteinteModal'); if(bg) bg.remove();
+  bg = el('div',{class:'modal-bg show', id:'atteinteModal'});
+  const box = el('div',{class:'modal'});
+  const close = ()=>bg.remove();
+  const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕'); x.addEventListener('click', close);
+  box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Atteinte « Espèces invasives »'), x));
+  box.appendChild(el('p',{style:'margin:0 0 8px; font-size:.9rem;'}, plan.length+' fiche(s) ont une espèce invasive dans le cortège sans l\'atteinte. Choisis l\'impact (- faible, +/- moyen, + fort) et décoche les fiches à laisser telles quelles.'));
+  const lignes = [];
+  plan.forEach(({r, c})=>{
+    const cb = el('input',{type:'checkbox'}); cb.checked = true;
+    const sel = el('select',{style:'width:auto; min-width:70px;'});
+    [['-','- faible'],['+/-','+/- moyen'],['+','+ fort']].forEach(([v,l])=>sel.appendChild(el('option',{value:v}, l)));
+    lignes.push({cb, sel, id:r._id});
+    box.appendChild(el('div',{class:'subcard', style:'display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px;'},
+      el('label',{style:'display:flex; gap:8px; align-items:center; flex:1 1 200px; min-width:0;'}, cb,
+        el('span',{}, el('b',{style:'font-family:var(--f-type);'}, (r.identifiant||r._id)+' '),
+          el('span',{style:'font-size:.85rem;'}, c.invasives.map(i=>i.nom+' ('+i.statut.replace('EEE Grand Est : ','')+')').join(', ')))),
+      sel));
+  });
+  const go = el('button',{class:'btn btn-primary', type:'button'}, '✓ Renseigner l\'atteinte sur les fiches cochées');
+  go.addEventListener('click', ()=>{
+    const list = getLocalRecords(), now = new Date().toISOString(); let n = 0;
+    lignes.filter(l=>l.cb.checked).forEach(l=>{ const r = list.find(x=>x._id===l.id); if(r){ r[CLE_ATTEINTE_EEE] = l.sel.value; r._saved_at = now; n++; } });
+    if(n && !setLocalRecords(list)) return;
+    if(editingId && lignes.some(l=>l.cb.checked && l.id===editingId)){ record = Object.assign({}, list.find(x=>x._id===editingId)); saveDraft(); const sec = currentSectionId; renderAll(); if(sec) showSection(sec); }
+    close();
+    toast('Atteinte « Espèces invasives » renseignée sur '+n+' fiche(s)', 3500);
+    if(document.getElementById('controleModal')) afficherControleFiches();
+  });
+  box.appendChild(go);
+  bg.appendChild(box);
+  bg.addEventListener('click', e=>{ if(e.target===bg) close(); });
+  document.body.appendChild(bg);
+}
+
 // Ajout en lot : aperçu fiche par fiche (cases à cocher), puis ajout des espèces cochées
 async function apercuAjoutEspecesCitees(){
   await chargerGwernEspeces();
@@ -3541,10 +3589,13 @@ async function apercuAjoutEspecesCitees(){
   bg.addEventListener('click', e=>{ if(e.target===bg) close(); });
   document.body.appendChild(bg);
 }
+let defilementControle = 0;
 function ouvrirFicheDepuisControle(r, section){
   record = Object.assign({}, r); editingId = r._id; saveDraft();
   renderAll(); refreshGpsChip();
-  const m = document.getElementById('controleModal'); if(m) m.remove();
+  const m = document.getElementById('controleModal');
+  if(m){ defilementControle = m.querySelector('.modal').scrollTop; m.remove(); }
+  document.getElementById('retourControle').hidden = false;
   closeModal();
   showSection(section || SECTIONS[0].id);
   toast('Fiche '+(r.identifiant||'')+' ouverte');
@@ -3558,10 +3609,18 @@ function ajouterEspeceAFiche(id, entry){
   if(editingId===id){ record = Object.assign({}, r); saveDraft(); const sec = currentSectionId; renderAll(); if(sec) showSection(sec); }
   toast(entry['Taxon valide court']+' ajoutée au cortège de '+(r.identifiant||'la fiche'));
 }
+// Bouton flottant affiché quand une fiche a été ouverte depuis le contrôle
+async function revenirAuControle(enregistrer){
+  if(enregistrer) saveRecord();
+  document.getElementById('retourControle').hidden = true;
+  await afficherControleFiches();
+  const m = document.querySelector('#controleModal .modal'); if(m) m.scrollTop = defilementControle;
+}
 async function afficherControleFiches(){
   await chargerGwernEspeces(); // anciens noms (synonymes) pour reconnaître les espèces citées
   const fiches = getRecords();
-  const resultats = fiches.map(r=>({r, pb: verifierFiche(r)})).filter(x=>x.pb.length);
+  // Les coordonnées GPS manquantes ne sont pas signalées ici (seulement à « Terminer »)
+  const resultats = fiches.map(r=>({r, pb: verifierFiche(r).filter(p=>p.code!=='gps')})).filter(x=>x.pb.length);
   const eee = resultats.filter(x=>x.pb.some(p=>p.type==='eee'));
   const autres = resultats.map(x=>({r:x.r, pb:x.pb.filter(p=>p.type!=='eee')})).filter(x=>x.pb.length);
   const triId = (a,b)=>String(a.r.identifiant||'').localeCompare(String(b.r.identifiant||''), 'fr', {numeric:true});
@@ -3574,6 +3633,12 @@ async function afficherControleFiches(){
   const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕'); x.addEventListener('click', close);
   box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Contrôle des fiches'), x));
   box.appendChild(el('p',{style:'margin:0 0 10px; font-size:.9rem;'}, fiches.length+' fiches contrôlées : '+eee.length+' avec une incohérence « espèces invasives », '+autres.length+' avec d\'autres points à compléter.'));
+  const sansAtteinte = fiches.filter(r=>controleEEE(r).pb.some(p=>p.section==='fonctions')).length;
+  if(sansAtteinte){
+    const btnAtt = el('button',{class:'btn btn-outline', type:'button', style:'margin:0 6px 6px 0;'}, '✓ Cocher l\'atteinte « Espèces invasives » ('+sansAtteinte+' fiche'+(sansAtteinte>1?'s':'')+')…');
+    btnAtt.addEventListener('click', apercuCocherAtteinteEEE);
+    box.appendChild(btnAtt);
+  }
   const btnCitees = el('button',{class:'btn btn-outline', type:'button', style:'margin-bottom:6px;'}, '➕ Ajouter au cortège les espèces citées dans les remarques…');
   btnCitees.addEventListener('click', apercuAjoutEspecesCitees);
   box.appendChild(btnCitees);
@@ -3665,6 +3730,8 @@ document.getElementById('btnRecordsTop').addEventListener('click', ()=>{
   document.querySelector('#recordsModal .modal').scrollTo({top:0, behavior:'smooth'});
 });
 document.getElementById('btnControle').addEventListener('click', ()=>afficherControleFiches());
+document.getElementById('btnRetourControle').addEventListener('click', ()=>revenirAuControle(true));
+document.getElementById('btnRetourControleX').addEventListener('click', ()=>{ document.getElementById('retourControle').hidden = true; });
 document.getElementById('gwernInput').addEventListener('change', e=>{
   const f = e.target.files[0]; e.target.value = '';
   if(f) importerGwern(f);
