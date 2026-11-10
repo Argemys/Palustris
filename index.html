@@ -621,7 +621,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 26</span>
+      <span>Palustris · version 27</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -2640,8 +2640,10 @@ function recordHasContent(r){
 }
 
 // ---- Cohérence atteinte « Espèces invasives » ↔ cortège floristique
-// Une espèce est considérée invasive si le catalogue Alsace-Lorraine lui donne un statut EEE
-// (liste Grand Est, toutes catégories, ou liste de l'Union européenne).
+// Une espèce est considérée invasive si le catalogue Alsace-Lorraine la classe EEE Grand Est
+// « implantée », « émergente » ou « alerte » (pas les listes de surveillance potentielle, mineure,
+// observation), ou si elle figure sur la liste de l'Union européenne.
+const EEE_GE_RETENUES = ['implantée','émergente','alerte'];
 const CLE_ATTEINTE_EEE = 'atteinte_'+slug('Espèces invasives');
 function statutEEE(entry){
   const cat = getFloreReferentiel('alslor');
@@ -2649,7 +2651,7 @@ function statutEEE(entry){
     : cat.find(r=>String(r.cdref16)===String(entry.cdref16 || entry['CD_REF (Taxref_7)'] || ''));
   if(!al) return null;
   const st = [];
-  if(champFilled(al['EEE GE'])) st.push('EEE Grand Est : '+al['EEE GE'].toLowerCase());
+  if(champFilled(al['EEE GE']) && EEE_GE_RETENUES.includes(al['EEE GE'].toLowerCase())) st.push('EEE Grand Est : '+al['EEE GE'].toLowerCase());
   if(champFilled(al['EEE UE'])) st.push('EEE Union européenne');
   return st.length ? st.join(', ') : null;
 }
