@@ -33,7 +33,8 @@ une fiche complète : coordonnées = point garanti à l'intérieur du polygone (
 pour la future carte), listes codées traduites d'après les tables du projet GwernQGIS (Forum des
 Marais Atlantiques), espèces rattachées au catalogue Alsace-Lorraine par leur code TAXREF
 (`gwern_especes.json` sert de secours par le nom). Les attributs d'origine restent dans la colonne
-`gwern_attributs` des exports. Une fiche dont l'identifiant existe déjà n'est jamais écrasée : le
+`gwern_attributs` des exports (y compris les champs de suivi `zoneprospe`, `Prospectio` et
+`Verif_2026`, qui ne sont pas recopiés dans la fiche). Une fiche dont l'identifiant existe déjà n'est jamais écrasée : le
 rapport d'import indique si elle est identique ou en quoi elle diffère.
 
 ## Espèces typiques des habitats CORINE

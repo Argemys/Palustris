@@ -619,7 +619,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 23</span>
+      <span>Palustris · version 24</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -967,7 +967,6 @@ const SAGE_HABITATS = ["Ripisylve","Forêt alluviale (CE et plaines allu.)","For
 
 const PRECONISATIONS = ["Restaurer","Entretenir","Modifier les pratiques","Intervenir en périphérie","Évolution spontanée","Protection","Maintien","Suivi"];
 
-const ZONE_PROSPECTEE = [['','— Sélectionner —'],['1','1 · terrain prévu et fait'],['2','2 · terrain non prévu et fait'],['0','0 · pas de terrain'],['-1','-1 · terrain prévu non fait']];
 const GEPPA_CLASSES = ['Ivd','Va','Vb','Vc','Vd','VIc','VId','H','NZH'];
 const TEXTURE_FRACTIONS = ['Sable','Limon','Argile'];
 const TEXTURE_PREFIX = {Sable:'sablo', Argile:'argilo', Limon:'limono'};
@@ -1538,7 +1537,7 @@ function refreshBannerIds(){
 // essentiels : champs qui font passer la rubrique de « commencée » à « remplie »
 // (rubrique sans essentiels : remplie dès qu'un champ est renseigné)
 const SECTIONS = [
-  {id:'ident', title:'1. Identification', build: buildIdent, accent:'#4C7358', essentiels:['observateur_type','id_num','x_l93','y_l93','date_obs','zone_prospectee']},
+  {id:'ident', title:'1. Identification', build: buildIdent, accent:'#4C7358', essentiels:['observateur_type','id_num','x_l93','y_l93','date_obs']},
   {id:'delim', title:'2. Délimitation', build: buildDelim, accent:'#2F6A86', essentiels:['delim_statut','conclusion_zh']},
   {id:'pedologie', title:'3. Pédologie', build: buildPedologie, accent:'#8A5A2B', essentiels:['sondages']},
   {id:'fonctions', title:'4. Fonctions & Atteintes', build: buildFonctions, accent:'#2E6E68', essentiels:[]},
@@ -2003,11 +2002,6 @@ function buildIdent(card){
   card.appendChild(two2);
 
   card.appendChild(inputText('date_obs','Date d\'observation', {type:'date'}));
-  // Statut de prospection (champ zoneprospe de GWERN), à renseigner obligatoirement
-  const zpSel = el('select',{id:'f_zone_prospectee'});
-  ZONE_PROSPECTEE.forEach(([v,l])=>{ const op = el('option',{value:v}, l); if((getVal('zone_prospectee')||'')===v) op.selected = true; zpSel.appendChild(op); });
-  zpSel.addEventListener('change', ()=>setVal('zone_prospectee', zpSel.value));
-  card.appendChild(fieldWrap('Zone prospectée', null, zpSel));
   card.appendChild(pillRadio('type_obs','Type d\'observation', ['in situ','ex situ','inaccessible']));
 
   buildPhotos(card);
@@ -2646,7 +2640,6 @@ function verifierFiche(){
   if(!v('id_num')) pb.push({msg:'Pas d\'ID de fiche', section:'ident'});
   if(!v('x_l93') || !v('y_l93')) pb.push({msg:'Pas de coordonnées GPS', section:'ident'});
   if(!v('date_obs')) pb.push({msg:'Pas de date d\'observation', section:'ident'});
-  if(!v('zone_prospectee')) pb.push({msg:'Zone prospectée non renseignée', section:'ident'});
   if(!v('conclusion_zh')) pb.push({msg:'Pas de conclusion « zone humide »', section:'delim'});
   const hab = record.corine_habitats || [];
   if(!hab.length) pb.push({msg:'Aucun habitat CORINE', section:'especes'});
@@ -3189,9 +3182,8 @@ function ficheDepuisGwern(a, anneaux, ref, nomFichier){
     r.x_l93 = pt[0].toFixed(2); r.y_l93 = pt[1].toFixed(2);
     r.geom_l93 = anneaux;
   }
-  if(a.zoneprospe!=='' && a.zoneprospe!=null) r.zone_prospectee = String(parseInt(a.zoneprospe,10));
   ajouterRq('remarques_ident', a.rqGene);
-  ajouterRq('remarques_ident', [a.Prospectio ? 'Prospection : '+a.Prospectio : '', a.Verif_2026 ? 'À vérifier en 2026' : '', a.Remarque].filter(Boolean).join(' · '));
+  ajouterRq('remarques_ident', a.Remarque); // Prospectio, Verif_2026 et zoneprospe (suivi) restent dans gwern_attributs
 
   // Délimitation
   r.delim_princ = [...new Set(gwListe(a.critDelim).map(x=>GW.delim[x.code]).filter(Boolean))];
@@ -3337,7 +3329,7 @@ async function importerGwern(file){
 // Libellés lisibles des champs, pour expliquer les différences
 function libelleChamp(k){
   const L = {planche_reference:'planche', id_num:'ID', planches_concernees:'planches concernées', date_obs:'date', observateur_type:'observateur',
-    x_l93:'X', y_l93:'Y', geom_l93:'contour', zone_prospectee:'zone prospectée', delim_princ:'critères de délimitation', conclusion_zh:'conclusion ZH',
+    x_l93:'X', y_l93:'Y', geom_l93:'contour', delim_princ:'critères de délimitation', conclusion_zh:'conclusion ZH',
     freq_submersion:'fréquence de submersion', etendue_submersion:'étendue de submersion', corine_habitats:'habitats CORINE', sage_habitat_type:'type SAGE',
     especes_selection:'cortège floristique', preconisations:'préconisations', faisabilite:'faisabilité', priorite:'priorité', zonages:'zonages', sondages:'sondages'};
   if(L[k]) return L[k];
