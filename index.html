@@ -616,12 +616,13 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-primary" id="btnExportGeojson" type="button">⬇️ Export GeoJSON</button>
       <button class="btn btn-water" id="btnExportCsv" type="button">⬇️ Export CSV</button>
       <button class="btn btn-outline" id="btnExportPhotos" type="button">📦 Export complet (CSV + photos, ZIP)</button>
+      <button class="btn btn-outline" id="btnControle" type="button">🔎 Contrôler toutes les fiches</button>
       <label class="btn btn-outline" style="cursor:pointer;">♻️ Restaurer une sauvegarde (ZIP)<input type="file" id="restoreInput" accept=".zip,application/zip" style="display:none;"></label>
       <label class="btn btn-outline" style="cursor:pointer;">🗺️ Importer une couche GWERN (shape en ZIP)<input type="file" id="gwernInput" accept=".zip,application/zip" style="display:none;"></label>
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 27</span>
+      <span>Palustris · version 28</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -2675,14 +2676,14 @@ function refreshEeeHints(){
 }
 
 // Oublis importants signalés au moment de « Terminer » (l'enregistrement reste possible).
-function verifierFiche(){
+function verifierFiche(rec = record){
   const pb = [];
-  const v = k => valeurRenseignee(record[k]);
+  const v = k => valeurRenseignee(rec[k]);
   if(!v('id_num')) pb.push({msg:'Pas d\'ID de fiche', section:'ident'});
   if(!v('x_l93') || !v('y_l93')) pb.push({msg:'Pas de coordonnées GPS', section:'ident'});
   if(!v('date_obs')) pb.push({msg:'Pas de date d\'observation', section:'ident'});
   if(!v('conclusion_zh')) pb.push({msg:'Pas de conclusion « zone humide »', section:'delim'});
-  const hab = record.corine_habitats || [];
+  const hab = rec.corine_habitats || [];
   if(!hab.length) pb.push({msg:'Aucun habitat CORINE', section:'especes'});
   else {
     const sansPct = hab.filter(h=>h.recouvrement==null || h.recouvrement==='').length;
@@ -2691,7 +2692,7 @@ function verifierFiche(){
     else if(total!==100) pb.push({msg:'Recouvrements des habitats : total '+total+' % (au lieu de 100 %)', section:'especes'});
   }
   if(!v('especes_selection')) pb.push({msg:'Cortège floristique vide', section:'especes'});
-  pb.push(...controleEEE(record).pb);
+  pb.push(...controleEEE(rec).pb.map(x=>Object.assign(x, {type:'eee'})));
   return pb;
 }
 function terminerFiche(){
@@ -3401,6 +3402,100 @@ function afficherRapportImport(rp, nom){
   document.body.appendChild(bg);
 }
 
+/* ===================== Contrôle de toutes les fiches enregistrées =====================
+   Applique la vérification de « Terminer » à chaque fiche et liste celles à reprendre, en
+   commençant par la cohérence espèces invasives ↔ atteinte. Rien n'est modifié sans un toucher. */
+// Espèces invasives citées en texte dans les remarques (ex. « Buddleia davidii » noté dans GWERN)
+const VARIANTES_NOMS_EEE = {'Buddleja davidii':['Buddleia davidii'], 'Reynoutria japonica':['Fallopia japonica'], 'Reynoutria sachalinensis':['Fallopia sachalinensis'], 'Reynoutria x bohemica':['Fallopia x bohemica', 'Fallopia bohemica', 'Reynoutria bohemica']};
+function sansAccent(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function invasivesCiteesEnRemarque(rec){
+  const texte = sansAccent(Object.keys(rec).filter(k=>k.startsWith('remarques')).map(k=>rec[k]).join(' \n '));
+  if(!texte.trim()) return [];
+  const dejaLa = new Set((rec.especes_selection||[]).map(e=>String(e.cdref16)));
+  return getFloreReferentiel('alslor').filter(e=>{
+    if(dejaLa.has(String(e.cdref16)) || !statutEEE(Object.assign({}, e, {catalogue:'alslor'}))) return false;
+    const nom = e['Taxon valide court'];
+    return [nom, ...(VARIANTES_NOMS_EEE[nom]||[])].some(n=>new RegExp('\\b'+sansAccent(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b').test(texte));
+  });
+}
+function ouvrirFicheDepuisControle(r, section){
+  record = Object.assign({}, r); editingId = r._id; saveDraft();
+  renderAll(); refreshGpsChip();
+  const m = document.getElementById('controleModal'); if(m) m.remove();
+  closeModal();
+  showSection(section || SECTIONS[0].id);
+  toast('Fiche '+(r.identifiant||'')+' ouverte');
+}
+function ajouterEspeceAFiche(id, entry){
+  const list = getLocalRecords();
+  const r = list.find(x=>x._id===id); if(!r) return;
+  r.especes_selection = (r.especes_selection||[]).concat([Object.assign({}, entry, {abondante:false, catalogue:'alslor'})]);
+  r._saved_at = new Date().toISOString();
+  if(!setLocalRecords(list)) return;
+  if(editingId===id){ record = Object.assign({}, r); saveDraft(); const sec = currentSectionId; renderAll(); if(sec) showSection(sec); }
+  toast(entry['Taxon valide court']+' ajoutée au cortège de '+(r.identifiant||'la fiche'));
+}
+function afficherControleFiches(){
+  const fiches = getRecords();
+  const resultats = fiches.map(r=>({r, pb: verifierFiche(r)})).filter(x=>x.pb.length);
+  const eee = resultats.filter(x=>x.pb.some(p=>p.type==='eee'));
+  const autres = resultats.map(x=>({r:x.r, pb:x.pb.filter(p=>p.type!=='eee')})).filter(x=>x.pb.length);
+  const triId = (a,b)=>String(a.r.identifiant||'').localeCompare(String(b.r.identifiant||''), 'fr', {numeric:true});
+  eee.sort(triId); autres.sort(triId);
+
+  let bg = document.getElementById('controleModal'); if(bg) bg.remove();
+  bg = el('div',{class:'modal-bg show', id:'controleModal'});
+  const box = el('div',{class:'modal'});
+  const close = ()=>bg.remove();
+  const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕'); x.addEventListener('click', close);
+  box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Contrôle des fiches'), x));
+  box.appendChild(el('p',{style:'margin:0 0 10px; font-size:.9rem;'}, fiches.length+' fiches contrôlées : '+eee.length+' avec une incohérence « espèces invasives », '+autres.length+' avec d\'autres points à compléter.'));
+
+  // 1. Espèces invasives
+  box.appendChild(el('h3',{style:'font-family:var(--f-type); margin:14px 0 6px;'}, 'Espèces invasives ↔ atteinte ('+eee.length+')'));
+  if(!eee.length) box.appendChild(el('p',{class:'hint'}, 'Aucune incohérence.'));
+  const ul = el('ul',{class:'check-list'});
+  eee.forEach(({r, pb})=>{
+    const p = pb.find(q=>q.type==='eee');
+    const li = el('li',{style:'flex-wrap:wrap;'});
+    const txt = el('span',{style:'flex:1 1 200px; min-width:0;'}, el('b',{}, (r.identifiant||r._id)+' '), p.msg);
+    const go = el('button',{class:'btn btn-outline', type:'button'},'Ouvrir');
+    go.addEventListener('click', ()=>ouvrirFicheDepuisControle(r, p.section));
+    li.append(txt, go);
+    // Suggestions : invasives citées dans les remarques mais absentes du cortège
+    const sugg = /aucune espèce invasive/.test(p.msg) ? invasivesCiteesEnRemarque(r) : [];
+    if(sugg.length){
+      const zone = el('div',{style:'flex:1 1 100%; display:flex; flex-wrap:wrap; gap:6px; align-items:center;'}, el('span',{class:'hint', style:'margin:0;'},'Citée(s) dans les remarques :'));
+      sugg.forEach(e=>{
+        const b = el('button',{class:'espece-chip', type:'button'}, '+ '+e['Taxon valide court']);
+        b.addEventListener('click', ()=>{ ajouterEspeceAFiche(r._id, e); afficherControleFiches(); });
+        zone.appendChild(b);
+      });
+      li.appendChild(zone);
+    }
+    ul.appendChild(li);
+  });
+  box.appendChild(ul);
+
+  // 2. Autres points
+  const det = el('details',{style:'margin-top:8px;'});
+  det.appendChild(el('summary',{style:'font-family:var(--f-type); font-weight:700; cursor:pointer;'}, 'Autres points à compléter ('+autres.length+')'));
+  const ul2 = el('ul',{class:'check-list'});
+  autres.forEach(({r, pb})=>{
+    const go = el('button',{class:'btn btn-outline', type:'button'},'Ouvrir');
+    go.addEventListener('click', ()=>ouvrirFicheDepuisControle(r, pb[0].section));
+    ul2.appendChild(el('li',{}, el('span',{style:'min-width:0;'}, el('b',{}, (r.identifiant||r._id)+' '), pb.map(q=>q.msg).join(' · ')), go));
+  });
+  det.appendChild(ul2);
+  box.appendChild(det);
+
+  const ok = el('button',{class:'btn btn-primary', type:'button', style:'margin-top:12px;'},'Fermer'); ok.addEventListener('click', close);
+  box.appendChild(ok);
+  bg.appendChild(box);
+  bg.addEventListener('click', e=>{ if(e.target===bg) close(); });
+  document.body.appendChild(bg);
+}
+
 function exportGeojson(){
   const list = getRecords();
   const features = list.map(r=>{
@@ -3442,6 +3537,7 @@ document.getElementById('btnRecordsBottom').addEventListener('click', ()=>{
 document.getElementById('btnRecordsTop').addEventListener('click', ()=>{
   document.querySelector('#recordsModal .modal').scrollTo({top:0, behavior:'smooth'});
 });
+document.getElementById('btnControle').addEventListener('click', ()=>afficherControleFiches());
 document.getElementById('gwernInput').addEventListener('change', e=>{
   const f = e.target.files[0]; e.target.value = '';
   if(f) importerGwern(f);
