@@ -526,6 +526,8 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
   padding:7px 8px 7px 10px; gap:6px; font-size:.86rem;
 }
 .cortege .chk label{flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px;}
+.eee-hint{margin-top:8px;}
+.eee-hint.alerte{color:var(--stamp);}
 .cortege-count{font-family:var(--f-type); font-weight:700; font-size:.86rem; color:var(--accent); margin:10px 0 6px; display:inline-block; border:2px solid currentColor; border-radius:3px; padding:2px 8px; transform:rotate(-1deg);}
 .cortege .sp{font-family:var(--f-serif); font-style:italic; font-size:1.02rem;}
 .cortege .t{font-family:var(--f-type); font-style:normal; font-size:.68rem; font-weight:700; border:1px solid currentColor; padding:0 4px; border-radius:2px; color:var(--ink-soft);}
@@ -619,7 +621,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 25</span>
+      <span>Palustris · version 26</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -1418,6 +1420,8 @@ function renderEspecesSearchBlock(container){
     list_container.appendChild(el('div',{class:'chk'}, lab, abBtn, rm));
   });
   container.appendChild(list_container);
+  container.appendChild(el('div',{class:'hint eee-hint', hidden:'hidden'}));
+  refreshEeeHints();
 }
 
 function ratingListSelectable(keyPrefix, items, options){
@@ -1563,7 +1567,7 @@ function sectionProgress(sec){
 let progressRaf = null;
 function scheduleProgressRefresh(){
   if(progressRaf) return;
-  progressRaf = requestAnimationFrame(()=>{ progressRaf = null; refreshTabProgress(); refreshGpsChip(); });
+  progressRaf = requestAnimationFrame(()=>{ progressRaf = null; refreshTabProgress(); refreshGpsChip(); refreshEeeHints(); });
 }
 function refreshTabProgress(){
   SECTIONS.forEach(sec=>{
@@ -2247,6 +2251,7 @@ function buildFonctions(card){
 
   card.appendChild(el('h2',{},'Atteintes'));
   card.appendChild(ratingList('atteinte', ATTEINTES, RATING3));
+  card.appendChild(el('div',{class:'hint eee-hint', hidden:'hidden'}));
 
   card.appendChild(el('h2',{},'Type de menaces'));
   card.appendChild(ratingList('menace', ['Aggravation atteintes','Projet prévu','Activité à risque à proximité','Autres'], RATINGND));
@@ -2596,6 +2601,7 @@ function renderAll(){
   showSection(SECTIONS[0].id);
   refreshTabProgress();
   refreshBannerIds();
+  refreshEeeHints();
 }
 // opts.swipe : arrivée par glissement — pas de fondu (la page est déjà visible) et la position
 // de défilement est gérée par le geste.
@@ -2633,6 +2639,39 @@ function recordHasContent(r){
   });
 }
 
+// ---- Cohérence atteinte « Espèces invasives » ↔ cortège floristique
+// Une espèce est considérée invasive si le catalogue Alsace-Lorraine lui donne un statut EEE
+// (liste Grand Est, toutes catégories, ou liste de l'Union européenne).
+const CLE_ATTEINTE_EEE = 'atteinte_'+slug('Espèces invasives');
+function statutEEE(entry){
+  const cat = getFloreReferentiel('alslor');
+  const al = (entry.catalogue==='alslor' || !entry.catalogue) && entry['EEE GE']!==undefined ? entry
+    : cat.find(r=>String(r.cdref16)===String(entry.cdref16 || entry['CD_REF (Taxref_7)'] || ''));
+  if(!al) return null;
+  const st = [];
+  if(champFilled(al['EEE GE'])) st.push('EEE Grand Est : '+al['EEE GE'].toLowerCase());
+  if(champFilled(al['EEE UE'])) st.push('EEE Union européenne');
+  return st.length ? st.join(', ') : null;
+}
+function controleEEE(rec){
+  const invasives = (rec.especes_selection||[]).map(e=>({nom: e['Taxon valide court'] || e['Taxon (Taxref 7)'] || '?', statut: statutEEE(e)})).filter(x=>x.statut);
+  const atteinte = valeurRenseignee(rec[CLE_ATTEINTE_EEE]);
+  const pb = [];
+  if(atteinte && !invasives.length) pb.push({msg:'Atteinte « Espèces invasives » renseignée, mais aucune espèce invasive dans le cortège floristique', section:'especes'});
+  if(!atteinte && invasives.length) pb.push({msg:'Espèce(s) invasive(s) dans le cortège ('+invasives.map(x=>x.nom).join(', ')+') mais l\'atteinte « Espèces invasives » n\'est pas renseignée', section:'fonctions'});
+  return {pb, invasives};
+}
+function refreshEeeHints(){
+  const {pb, invasives} = controleEEE(record);
+  document.querySelectorAll('.eee-hint').forEach(h=>{
+    h.innerHTML = '';
+    if(pb.length) h.append('⚠️ '+pb[0].msg);
+    else if(invasives.length) h.append('✓ Espèces invasives : '+invasives.map(x=>x.nom+' ('+x.statut+')').join(' ; '));
+    h.classList.toggle('alerte', !!pb.length);
+    h.hidden = !pb.length && !invasives.length;
+  });
+}
+
 // Oublis importants signalés au moment de « Terminer » (l'enregistrement reste possible).
 function verifierFiche(){
   const pb = [];
@@ -2650,6 +2689,7 @@ function verifierFiche(){
     else if(total!==100) pb.push({msg:'Recouvrements des habitats : total '+total+' % (au lieu de 100 %)', section:'especes'});
   }
   if(!v('especes_selection')) pb.push({msg:'Cortège floristique vide', section:'especes'});
+  pb.push(...controleEEE(record).pb);
   return pb;
 }
 function terminerFiche(){
