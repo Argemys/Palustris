@@ -622,7 +622,7 @@ nav.tabs .tab-ind{border-radius:9px 9px 0 0; box-shadow:none;}
       <button class="btn btn-outline" id="btnCloseModal" type="button">Fermer</button>
     </div>
     <div class="modal-foot">
-      <span>Palustris · version 28</span>
+      <span>Palustris · version 29</span>
       <button class="btn btn-outline" id="btnRecordsTop" type="button" style="padding:6px 10px; font-size:.75rem;">⬆ Haut de la liste</button>
       <button class="btn btn-outline" id="btnLogout" type="button" style="padding:6px 10px; font-size:.75rem;">Déconnexion</button>
     </div>
@@ -3405,18 +3405,141 @@ function afficherRapportImport(rp, nom){
 /* ===================== Contrôle de toutes les fiches enregistrées =====================
    Applique la vérification de « Terminer » à chaque fiche et liste celles à reprendre, en
    commençant par la cohérence espèces invasives ↔ atteinte. Rien n'est modifié sans un toucher. */
-// Espèces invasives citées en texte dans les remarques (ex. « Buddleia davidii » noté dans GWERN)
-const VARIANTES_NOMS_EEE = {'Buddleja davidii':['Buddleia davidii'], 'Reynoutria japonica':['Fallopia japonica'], 'Reynoutria sachalinensis':['Fallopia sachalinensis'], 'Reynoutria x bohemica':['Fallopia x bohemica', 'Fallopia bohemica', 'Reynoutria bohemica']};
-function sansAccent(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
-function invasivesCiteesEnRemarque(rec){
-  const texte = sansAccent(Object.keys(rec).filter(k=>k.startsWith('remarques')).map(k=>rec[k]).join(' \n '));
-  if(!texte.trim()) return [];
-  const dejaLa = new Set((rec.especes_selection||[]).map(e=>String(e.cdref16)));
-  return getFloreReferentiel('alslor').filter(e=>{
-    if(dejaLa.has(String(e.cdref16)) || !statutEEE(Object.assign({}, e, {catalogue:'alslor'}))) return false;
+// ---- Espèces citées en texte dans les remarques (ex. remarque biologique GWERN « Fraxinus excelsior,
+// Urtica dioica »). Noms exacts, variantes, anciens noms, et petites fautes de frappe (≤ 2 lettres,
+// signalées pour vérification). « (très abondant) » ou « abondance de … » → espèce marquée abondante.
+const VARIANTES_NOMS = {'Buddleja davidii':['Buddleia davidii'], 'Reynoutria japonica':['Fallopia japonica'], 'Reynoutria sachalinensis':['Fallopia sachalinensis'], 'Reynoutria x bohemica':['Fallopia x bohemica', 'Fallopia bohemica', 'Reynoutria bohemica']};
+function sansAccent(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
+function distance(a, b){
+  if(Math.abs(a.length-b.length) > 2) return 9;
+  const d = Array.from({length:a.length+1}, (_,i)=>[i]);
+  for(let j=1;j<=b.length;j++) d[0][j] = j;
+  for(let i=1;i<=a.length;i++) for(let j=1;j<=b.length;j++){
+    d[i][j] = Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+    if(i>1 && j>1 && a[i-1]===b[j-2] && a[i-2]===b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2]+1); // inversion de 2 lettres
+  }
+  return d[a.length][b.length];
+}
+let indexNoms = null;
+function indexNomsCatalogue(){
+  if(indexNoms && indexNoms.avecSynonymes === !!gwernEspeces && indexNoms.taille === getFloreReferentiel('alslor').length) return indexNoms;
+  const cat = getFloreReferentiel('alslor');
+  const exact = new Map(), genres = new Set(), binomes = [];
+  const syn = (gwernEspeces && gwernEspeces.synonymes) || {};
+  const parNom = new Map(cat.map(e=>[e['Taxon valide court'], e]));
+  const ajouter = (nom, e)=>{ const k = sansAccent(nom).replace(/\s+/g,' ').trim(); if(!exact.has(k)) exact.set(k, e); };
+  cat.forEach(e=>{
     const nom = e['Taxon valide court'];
-    return [nom, ...(VARIANTES_NOMS_EEE[nom]||[])].some(n=>new RegExp('\\b'+sansAccent(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b').test(texte));
+    ajouter(nom, e);
+    if(/ x /.test(nom)) ajouter(nom.replace(/ x /,' '), e);           // « Populus canadensis » pour Populus x canadensis
+    (VARIANTES_NOMS[nom]||[]).forEach(v=>ajouter(v, e));
+    const t = sansAccent(nom).split(' ');
+    genres.add(t[0]);
+    if(t.length===2) binomes.push({k:t.join(' '), e});
   });
+  Object.entries(syn).forEach(([ancien, actuel])=>{ if(parNom.has(actuel)) ajouter(ancien, parNom.get(actuel)); });
+  return indexNoms = {exact, genres:[...genres], binomes, avecSynonymes: !!gwernEspeces, taille: cat.length};
+}
+function texteRemarques(rec){
+  return Object.keys(rec).filter(k=>k.startsWith('remarques')).map(k=>String(rec[k]||''))
+    .join('\n').split('\n').filter(l=>!/^(Import GWERN|Type\(s\) SAGE)/.test(l)).join('\n');
+}
+function especesCiteesEnRemarque(rec){
+  const idx = indexNomsCatalogue();
+  // sépare les noms collés (« urbanumHedera ») puis découpe en mots
+  const brut = texteRemarques(rec).replace(/([a-zà-ÿ])([A-Z])/g, '$1 $2');
+  const mots = [...sansAccent(brut).matchAll(/[a-z][a-z-]*/g)].map(m=>({w:m[0], i:m.index}));
+  const dejaLa = new Set((rec.especes_selection||[]).map(e=>String(e.cdref16)));
+  const trouves = new Map(), nonReconnues = [];
+  const genresConnus = new Set(idx.genres);
+  const noter = (e, cite, debut, fin, corrige)=>{
+    if(dejaLa.has(String(e.cdref16)) || trouves.has(e.cdref16)) return;
+    // « abondant » seulement dans le même élément de liste (entre deux virgules) que le nom
+    const avant = sansAccent(brut.slice(0, debut)).split(/[,;\n]/).pop(), apres = sansAccent(brut.slice(fin)).split(/[,;\n]/)[0];
+    trouves.set(e.cdref16, {entry:e, cite, corrige, abondante: /abondan/.test(avant+' '+apres)});
+  };
+  for(let i=0;i+1<mots.length;i++){
+    const m1 = mots[i], m2 = mots[i+1];
+    if(m2.w==='sp' || m2.w==='spp' || m2.w.length<3) continue;
+    if(!/^\s+$/.test(brut.slice(m1.i+m1.w.length, m2.i))) continue; // pas d'association par-dessus une ponctuation
+    // sous-espèce : « genre espece subsp nom »
+    if(mots[i+3] && /^(subsp|var)$/.test(mots[i+2].w)){
+      const k4 = [m1.w, m2.w, mots[i+2].w+'.', mots[i+3].w].join(' ');
+      if(idx.exact.has(k4)){ noter(idx.exact.get(k4), brut.slice(m1.i, mots[i+3].i+mots[i+3].w.length), m1.i, mots[i+3].i+mots[i+3].w.length, false); continue; }
+    }
+    const k = m1.w+' '+m2.w, fin = m2.i+m2.w.length;
+    if(idx.exact.has(k)){ noter(idx.exact.get(k), brut.slice(m1.i, fin), m1.i, fin, false); continue; }
+    // faute de frappe : genre proche d'un genre connu, nom complet à 2 lettres près, meilleure proposition unique
+    if(m1.w.length<4 || !idx.genres.some(g=>distance(g, m1.w)<=2)) continue;
+    let best = null, nbBest = 0;
+    idx.binomes.forEach(b=>{ const d = distance(b.k, k); if(d<=2){ if(!best || d<best.d){ best = {d, e:b.e}; nbBest = 1; } else if(d===best.d && b.e!==best.e) nbBest++; } });
+    if(best && nbBest===1) noter(best.e, brut.slice(m1.i, fin), m1.i, fin, true);
+    else if(genresConnus.has(m1.w) && /^[A-Z]/.test(brut[m1.i])) nonReconnues.push(brut.slice(m1.i, fin));
+  }
+  const res = [...trouves.values()];
+  res.nonReconnues = [...new Set(nonReconnues)];
+  return res;
+}
+function invasivesCiteesEnRemarque(rec){
+  return especesCiteesEnRemarque(rec).filter(x=>statutEEE(Object.assign({}, x.entry, {catalogue:'alslor'}))).map(x=>x.entry);
+}
+
+// Ajout en lot : aperçu fiche par fiche (cases à cocher), puis ajout des espèces cochées
+async function apercuAjoutEspecesCitees(){
+  await chargerGwernEspeces();
+  const plan = getLocalRecords().map(r=>({r, ajouts: especesCiteesEnRemarque(r)})).filter(x=>x.ajouts.length || x.ajouts.nonReconnues.length)
+    .sort((a,b)=>String(a.r.identifiant||'').localeCompare(String(b.r.identifiant||''), 'fr', {numeric:true}));
+  let bg = document.getElementById('ajoutModal'); if(bg) bg.remove();
+  bg = el('div',{class:'modal-bg show', id:'ajoutModal'});
+  const box = el('div',{class:'modal'});
+  const close = ()=>bg.remove();
+  const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕'); x.addEventListener('click', close);
+  box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Espèces citées dans les remarques'), x));
+  const total = plan.reduce((a,p)=>a+p.ajouts.length, 0);
+  if(!plan.length){
+    box.appendChild(el('p',{}, 'Aucune espèce citée dans les remarques qui ne soit pas déjà dans le cortège.'));
+  } else {
+    box.appendChild(el('p',{style:'margin:0 0 8px; font-size:.9rem;'}, total
+      ? total+' espèce(s) à ajouter sur '+plan.filter(x=>x.ajouts.length).length+' fiche(s). Décoche celles à ne pas ajouter ; les noms corrigés (faute de frappe) sont signalés, à vérifier.'
+      : 'Toutes les espèces reconnues sont déjà dans le cortège. Restent les noms non reconnus ci-dessous.'));
+    const cases = [];
+    plan.forEach(({r, ajouts})=>{
+      const bloc = el('div',{class:'subcard', style:'margin-bottom:8px;'});
+      bloc.appendChild(el('b',{style:'font-family:var(--f-type);'}, r.identifiant || r._id));
+      ajouts.forEach(a=>{
+        const cb = el('input',{type:'checkbox'}); cb.checked = true;
+        cases.push({cb, id:r._id, a});
+        const lib = el('label',{style:'display:flex; gap:8px; align-items:flex-start; padding:4px 0; font-size:.88rem;'}, cb,
+          el('span',{}, el('i',{style:'font-family:var(--f-serif);'}, a.entry['Taxon valide court']),
+            a.abondante ? ' · abondante' : '',
+            a.corrige ? el('span',{class:'hint', style:'display:block; margin:0; color:var(--stamp);'}, 'corrigé depuis « '+a.cite+' » — à vérifier') : ''));
+        bloc.appendChild(lib);
+      });
+      if(ajouts.nonReconnues.length) bloc.appendChild(el('div',{class:'hint', style:'margin:2px 0 0;'}, 'Non reconnu(s) dans le catalogue : '+ajouts.nonReconnues.join(', ')+' — à saisir à la main si besoin'));
+      box.appendChild(bloc);
+    });
+    const go = el('button',{class:'btn btn-primary', type:'button'}, '➕ Ajouter les espèces cochées');
+    if(!total) go.style.display = 'none';
+    go.addEventListener('click', ()=>{
+      const list = getLocalRecords(), now = new Date().toISOString();
+      let n = 0; const touchees = new Set();
+      cases.filter(c=>c.cb.checked).forEach(({id, a})=>{
+        const r = list.find(x=>x._id===id); if(!r) return;
+        if((r.especes_selection||[]).some(e=>String(e.cdref16)===String(a.entry.cdref16))) return;
+        r.especes_selection = (r.especes_selection||[]).concat([Object.assign({}, a.entry, {abondante:a.abondante, catalogue:'alslor'})]);
+        r._saved_at = now; n++; touchees.add(id);
+      });
+      if(n && !setLocalRecords(list)) return;
+      if(editingId && touchees.has(editingId)){ record = Object.assign({}, list.find(x=>x._id===editingId)); saveDraft(); const sec = currentSectionId; renderAll(); if(sec) showSection(sec); }
+      close();
+      toast(n+' espèce(s) ajoutée(s) sur '+touchees.size+' fiche(s)', 3500);
+      if(document.getElementById('controleModal')) afficherControleFiches();
+    });
+    box.appendChild(go);
+  }
+  bg.appendChild(box);
+  bg.addEventListener('click', e=>{ if(e.target===bg) close(); });
+  document.body.appendChild(bg);
 }
 function ouvrirFicheDepuisControle(r, section){
   record = Object.assign({}, r); editingId = r._id; saveDraft();
@@ -3435,7 +3558,8 @@ function ajouterEspeceAFiche(id, entry){
   if(editingId===id){ record = Object.assign({}, r); saveDraft(); const sec = currentSectionId; renderAll(); if(sec) showSection(sec); }
   toast(entry['Taxon valide court']+' ajoutée au cortège de '+(r.identifiant||'la fiche'));
 }
-function afficherControleFiches(){
+async function afficherControleFiches(){
+  await chargerGwernEspeces(); // anciens noms (synonymes) pour reconnaître les espèces citées
   const fiches = getRecords();
   const resultats = fiches.map(r=>({r, pb: verifierFiche(r)})).filter(x=>x.pb.length);
   const eee = resultats.filter(x=>x.pb.some(p=>p.type==='eee'));
@@ -3450,6 +3574,9 @@ function afficherControleFiches(){
   const x = el('button',{class:'modal-close', type:'button', 'aria-label':'Fermer'},'✕'); x.addEventListener('click', close);
   box.appendChild(el('div',{class:'modal-head'}, el('h2',{},'Contrôle des fiches'), x));
   box.appendChild(el('p',{style:'margin:0 0 10px; font-size:.9rem;'}, fiches.length+' fiches contrôlées : '+eee.length+' avec une incohérence « espèces invasives », '+autres.length+' avec d\'autres points à compléter.'));
+  const btnCitees = el('button',{class:'btn btn-outline', type:'button', style:'margin-bottom:6px;'}, '➕ Ajouter au cortège les espèces citées dans les remarques…');
+  btnCitees.addEventListener('click', apercuAjoutEspecesCitees);
+  box.appendChild(btnCitees);
 
   // 1. Espèces invasives
   box.appendChild(el('h3',{style:'font-family:var(--f-type); margin:14px 0 6px;'}, 'Espèces invasives ↔ atteinte ('+eee.length+')'));
